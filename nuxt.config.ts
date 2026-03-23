@@ -14,6 +14,8 @@ export default defineNuxtConfig({
     deepgramApiKey: process.env.DEEPGRAM_API_KEY || "",
     mistralApiKey: process.env.MISTRAL_API_KEY || "",
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+    // Dev bypass — skip all Stripe/quota checks
+    devBypassStripe: process.env.DEV_BYPASS_STRIPE === "true",
 
     // Public keys (available client-side)
     public: {
@@ -21,6 +23,8 @@ export default defineNuxtConfig({
       stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || "",
       stripePriceIdBasic: process.env.STRIPE_PRICE_ID_BASIC || "",
       stripePriceIdPro: process.env.STRIPE_PRICE_ID_PRO || "",
+      // Exposed to client so the UI can also bypass quota warnings
+      devBypassStripe: process.env.DEV_BYPASS_STRIPE === "true",
     },
   },
 
