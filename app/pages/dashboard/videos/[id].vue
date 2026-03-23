@@ -525,7 +525,7 @@ const subtitlePreviewStyle = computed(() => {
               <!-- Short Info -->
               <div class="p-3 space-y-2">
                 <div class="flex items-start justify-between gap-2">
-                  <h3 class="font-semibold text-sm leading-tight flex-1">{{ short.title }}</h3>
+                  <h3 class="font-semibold text-sm leading-tight flex-1 line-clamp-2">{{ short.title }}</h3>
                   <div class="relative" @click.stop>
                     <button class="p-1 rounded hover:bg-muted cursor-pointer" @click="toggleMenu(short.id)">
                       <MoreVertical class="size-4 text-muted-foreground" />
@@ -694,7 +694,7 @@ const subtitlePreviewStyle = computed(() => {
           </div>
         </CardContent>
                 <!-- 'Come back later' hint -->
-        <div class="mx-6 pb-2 mt-2 flex items-start gap-2 rounded-lg bg-muted/60 border border-border px-3 py-2.5 text-sm text-muted-foreground">
+        <div class="mx-6 mb-6 pb-2  flex items-start gap-2 rounded-lg bg-muted/60 border border-border px-3 py-2.5 text-sm text-muted-foreground">
           <span class="text-base leading-none mt-0.5">💡</span>
           <span>You can <strong class="text-foreground">close this page and come back later</strong> — processing continues in the background and your shorts will be ready here when done.</span>
         </div>

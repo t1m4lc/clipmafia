@@ -11,7 +11,6 @@ import {
   WATERMARK_CONFIG,
   getWatermarkAlignment,
   RENDER,
-  PREVIEW_TO_ASS_SCALE,
   type SubtitleStyleConfig,
   type WatermarkConfig,
 } from "./overlayConfig";
@@ -221,9 +220,80 @@ export async function processSegment(
 }
 
 /**
+ * Convert SRT time "HH:MM:SS,mmm" to ASS time "H:MM:SS.cc" (centiseconds).
+ */
+function srtTimeToAss(srtTime: string): string {
+  const [hhmmss, ms] = srtTime.split(",");
+  const [hh, mm, ss] = (hhmmss ?? "00:00:00").split(":");
+  const cc = Math.round(parseInt(ms ?? "0") / 10);
+  return `${parseInt(hh ?? "0")}:${(mm ?? "00").padStart(2, "0")}:${(ss ?? "00").padStart(2, "0")}.${String(cc).padStart(2, "0")}`;
+}
+
+/**
+ * Convert SRT subtitle content to a full ASS file.
+ *
+ * PlayResX/PlayResY match the video dimensions (1080×1920).
+ * All style values (fontSize, outline, marginV…) are already in video pixels
+ * and are written directly — no scaling needed.
+ */
+function srtToAss(
+  srtContent: string,
+  s: Required<SubtitleStyle>,
+  playResX: number,
+  playResY: number,
+): string {
+  const bold = s.bold ? -1 : 0; // ASS: -1 = bold, 0 = normal
+  const marginLR = 30; // horizontal padding in video pixels
+
+  console.log("[srtToAss] Using values directly (video pixels):", {
+    fontSize: s.fontSize,
+    outline: s.outline,
+    shadow: s.shadow,
+    marginV: s.marginV,
+    alignment: s.alignment,
+    playResX,
+    playResY,
+  });
+
+  let ass = "[Script Info]\n";
+  ass += "ScriptType: v4.00+\n";
+  ass += `PlayResX: ${playResX}\n`;
+  ass += `PlayResY: ${playResY}\n`;
+  ass += "WrapStyle: 0\n";
+  ass += "ScaledBorderAndShadow: yes\n\n";
+
+  ass += "[V4+ Styles]\n";
+  ass +=
+    "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n";
+  ass += `Style: Default,${s.fontName},${s.fontSize},${hexToAss(s.primaryColor)},${hexToAss(s.primaryColor)},${hexToAss(s.outlineColor)},&H80000000,${bold},0,0,0,100,100,0,0,1,${s.outline},${s.shadow},${s.alignment},${marginLR},${marginLR},${s.marginV},1\n\n`;
+
+  ass += "[Events]\n";
+  ass +=
+    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n";
+
+  // Parse SRT cues and convert to ASS Dialogue lines
+  const cues = srtContent.trim().split(/\n\n+/);
+  for (const cue of cues) {
+    const lines = cue.trim().split("\n");
+    if (lines.length < 3) continue;
+    const timing = lines[1]!;
+    const m = timing.match(
+      /(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})/,
+    );
+    if (!m) continue;
+    const start = srtTimeToAss(m[1]!);
+    const end = srtTimeToAss(m[2]!);
+    const text = lines.slice(2).join("\\N"); // ASS multi-line separator
+    ass += `Dialogue: 0,${start},${end},Default,,0,0,0,,${text}\n`;
+  }
+
+  return ass;
+}
+
+/**
  * Burn subtitles into a video using FFmpeg.
- * Uses SRT file with styled subtitles optimized for mobile viewing.
- * All subtitles are static (no animations) for rendering reliability.
+ * Generates a proper ASS file (not SRT) with explicit PlayResX/PlayResY
+ * to guarantee correct font-size rendering regardless of libass defaults.
  * Optionally burns a watermark for free-tier users.
  */
 export async function burnSubtitles(
@@ -267,6 +337,15 @@ export async function burnSubtitles(
     ...filteredStyle,
   } as Required<SubtitleStyle>;
 
+  // Sanity clamp: if fontSize is unreasonably small (< 16 video pixels),
+  // it's a stale value from the old phone-pixel system — use the default.
+  if (s.fontSize < 16) {
+    console.warn(
+      `[burnSubtitles] fontSize=${s.fontSize} looks like a stale phone-pixel value. Using default (${DEFAULT_SUBTITLE_STYLE.fontSize}).`,
+    );
+    s.fontSize = DEFAULT_SUBTITLE_STYLE.fontSize as number;
+  }
+
   // Shared path-escaping for ffmpeg filter-graph syntax
   function escapePath(p: string): string {
     return p
@@ -279,59 +358,35 @@ export async function burnSubtitles(
 
   const baseFilename = `subs_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-  // ── Static path: SRT + force_style (no animations) ──
-  console.log("[burnSubtitles] Using STATIC path (SRT + force_style)", {
-    fontName: s.fontName,
-    fontSize: s.fontSize,
-    bold: s.bold,
-    alignment: s.alignment,
-    marginV: s.marginV,
-  });
-  const srtPath = join(dirname(inputPath), `${baseFilename}.srt`);
-  await writeFile(srtPath, srtContent, "utf-8");
+  // Convert SRT → proper ASS file with PlayResX=1080, PlayResY=1920.
+  //
+  // WHY ASS AND NOT SRT+force_style:
+  //   libass defaults to PlayResY=288 for SRT files.  A force_style FontSize
+  //   of 33 therefore renders at  33 × (1920÷288) ≈ 220 px — the root cause
+  //   of subtitles being WAY too big regardless of any other scaling fix.
+  //   With a real ASS file and PlayResY=1920, FontSize=27 renders as exactly
+  //   27 px, perfectly matching the 12 px preview on an 844 px-tall phone screen.
+  const assContent = srtToAss(srtContent, s, RENDER.width, RENDER.height);
+  const assPath = join(dirname(inputPath), `${baseFilename}.ass`);
+  await writeFile(assPath, assContent, "utf-8");
 
-  // Verify SRT file was written
+  // Verify ASS file was written
   const { stat } = await import("fs/promises");
-  const srtStat = await stat(srtPath).catch(() => null);
-  if (!srtStat) {
-    throw new Error(`Failed to write subtitle file to ${srtPath}`);
+  const assStat = await stat(assPath).catch(() => null);
+  if (!assStat) {
+    throw new Error(`Failed to write subtitle file to ${assPath}`);
   }
 
-  // Scale fontSize and marginV from phone-screen-pixels → ASS coordinate pixels.
-  // Stored settings use "phone screen pixels" (390px-wide reference);
-  // ASS uses the video coordinate space (1080×1920).
-  const assFontSize = Math.round(s.fontSize * PREVIEW_TO_ASS_SCALE);
-  const assMarginV = Math.round(s.marginV * PREVIEW_TO_ASS_SCALE);
-
-  console.log("[burnSubtitles] ASS coords:", {
-    assFontSize,
-    assMarginV,
-    scale: PREVIEW_TO_ASS_SCALE,
-  });
-
-  // Build ASS force_style string from the SubtitleStyle
-  const subtitleStyle = [
-    `FontName=${s.fontName}`,
-    `FontSize=${assFontSize}`,
-    `PrimaryColour=${hexToAss(s.primaryColor)}`,
-    `OutlineColour=${hexToAss(s.outlineColor)}`,
-    "BackColour=&H80000000",
-    `Bold=${s.bold ? 1 : 0}`,
-    `Outline=${s.outline}`,
-    `Shadow=${s.shadow}`,
-    `MarginV=${assMarginV}`,
-    `Alignment=${s.alignment}`,
-  ].join(",");
-
-  let vfFilter = `subtitles='${escapePath(srtPath)}':force_style='${subtitleStyle}'`;
+  // No force_style needed — all style info is embedded in the ASS [V4+ Styles] header
+  let vfFilter = `subtitles='${escapePath(assPath)}'`;
 
   // ── Watermark overlay for free users ──
   if (options?.addWatermark) {
     const wm = WATERMARK_CONFIG;
     const wmAlignment = getWatermarkAlignment(s.alignment);
-    // Scale watermark values the same way
-    const wmFontSize = Math.round(wm.fontSize * PREVIEW_TO_ASS_SCALE);
-    const wmMarginV = Math.round(wm.marginV * PREVIEW_TO_ASS_SCALE);
+    // Watermark values are already in video pixels — use directly
+    const wmFontSize = wm.fontSize;
+    const wmMarginV = wm.marginV;
     // Use drawtext filter for the watermark
     const wmFilter = [
       `drawtext=text='${wm.text}'`,
@@ -369,7 +424,7 @@ export async function burnSubtitles(
       outputPath,
     ]);
   } finally {
-    await unlink(srtPath).catch(() => {});
+    await unlink(assPath).catch(() => {});
   }
 
   return outputPath;

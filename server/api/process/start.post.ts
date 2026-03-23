@@ -101,6 +101,7 @@ export default defineEventHandler(async (event) => {
       status: "queued",
       duration_option: durationOption,
       progress: 0,
+      subtitle_settings: subtitleSettings || null,
       ...carryOverData,
     } as any)
     .select()

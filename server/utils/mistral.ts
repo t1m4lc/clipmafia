@@ -22,8 +22,75 @@ function detectSilenceGaps(
 }
 
 /**
+ * Calculate speech density for a segment.
+ * Returns a value between 0 and 1 where 1 = continuous speech, 0 = all silence.
+ */
+function calculateSpeechDensity(
+  segment: Segment,
+  transcript: TranscriptWord[],
+): number {
+  const segDuration = segment.end - segment.start;
+  if (segDuration <= 0) return 0;
+
+  const wordsInRange = transcript.filter(
+    (w) => w.end > segment.start && w.start < segment.end,
+  );
+  if (wordsInRange.length === 0) return 0;
+
+  // Sum up the time actually spent speaking
+  let speechTime = 0;
+  for (const w of wordsInRange) {
+    const wordStart = Math.max(w.start, segment.start);
+    const wordEnd = Math.min(w.end, segment.end);
+    speechTime += wordEnd - wordStart;
+  }
+
+  return speechTime / segDuration;
+}
+
+/**
+ * Check if a segment's text forms roughly complete sentences.
+ * Returns true if the transcript text within the segment ends with
+ * sentence-ending punctuation (. ! ? … etc.)
+ */
+function hasCompleteSentences(
+  segment: Segment,
+  transcript: TranscriptWord[],
+): boolean {
+  const wordsInRange = transcript.filter(
+    (w) => w.start >= segment.start && w.end <= segment.end,
+  );
+  if (wordsInRange.length === 0) return false;
+
+  const lastWord = wordsInRange[wordsInRange.length - 1]!;
+  // Check if the last word ends with sentence-ending punctuation
+  return /[.!?…।。？！]$/.test(lastWord.text.trim());
+}
+
+/**
+ * Find the longest internal silence gap within a segment.
+ */
+function longestInternalSilence(
+  segment: Segment,
+  transcript: TranscriptWord[],
+): number {
+  const wordsInRange = transcript.filter(
+    (w) => w.start >= segment.start && w.end <= segment.end,
+  );
+  if (wordsInRange.length < 2) return 0;
+
+  let maxGap = 0;
+  for (let i = 1; i < wordsInRange.length; i++) {
+    const gap = wordsInRange[i]!.start - wordsInRange[i - 1]!.end;
+    if (gap > maxGap) maxGap = gap;
+  }
+  return maxGap;
+}
+
+/**
  * Post-process segments: enforce minimum duration, merge short segments,
- * apply audio safety buffers, and respect silence gaps.
+ * apply audio safety buffers, respect silence gaps, score by speech density,
+ * and validate sentence completeness.
  */
 function postProcessSegments(
   segments: Segment[],
@@ -124,7 +191,47 @@ function postProcessSegments(
     return true;
   });
 
-  // 4. Re-sort by score descending
+  // 4. Score adjustment: penalize segments with bad speech density / long silences
+  for (const seg of final) {
+    const density = calculateSpeechDensity(seg, transcript);
+    const maxSilence = longestInternalSilence(seg, transcript);
+    const complete = hasCompleteSentences(seg, transcript);
+
+    let scoreAdj = seg.score;
+
+    // Penalize low speech density (< 30% speech = very bad)
+    if (density < 0.3) {
+      scoreAdj *= 0.5;
+      console.log(
+        `[postProcess] Penalizing "${seg.title}" — speech density only ${(density * 100).toFixed(0)}%`,
+      );
+    } else if (density < 0.5) {
+      scoreAdj *= 0.75;
+    }
+
+    // Penalize long internal silences (> 3s = awkward)
+    if (maxSilence > 3.0) {
+      scoreAdj *= 0.6;
+      console.log(
+        `[postProcess] Penalizing "${seg.title}" — ${maxSilence.toFixed(1)}s internal silence`,
+      );
+    } else if (maxSilence > 2.0) {
+      scoreAdj *= 0.8;
+    }
+
+    // Small bonus for complete sentences
+    if (complete) {
+      scoreAdj = Math.min(1.0, scoreAdj * 1.05);
+    }
+
+    seg.score = Math.round(scoreAdj * 100) / 100;
+
+    console.log(
+      `[postProcess] Segment "${seg.title}": density=${(density * 100).toFixed(0)}%, maxSilence=${maxSilence.toFixed(1)}s, complete=${complete}, finalScore=${seg.score}`,
+    );
+  }
+
+  // 5. Re-sort by score descending
   final.sort((a, b) => b.score - a.score);
 
   return final;
@@ -158,9 +265,9 @@ export async function detectSegments(
     .map((w) => `[${w.start.toFixed(1)}s] ${w.text}`)
     .join(" ");
 
-  const prompt = `You are an expert video editor specializing in creating viral short-form content.
+  const prompt = `You are an expert video editor specializing in creating viral short-form content for TikTok, YouTube Shorts, and Instagram Reels.
 
-Analyze this transcript from a video and identify the BEST segments that would make engaging short videos (Shorts/Reels/TikTok).
+Analyze this transcript from a video and identify the BEST segments that would make engaging short videos.
 
 TRANSCRIPT (with timestamps in seconds):
 ${transcriptText}
@@ -170,34 +277,64 @@ VIDEO DURATION: ${videoDuration} seconds
 TARGET SEGMENT DURATION: ${durationOption} seconds
 ABSOLUTE MINIMUM DURATION: ${minDuration} seconds (CRITICAL — NEVER generate a segment shorter than this)
 
-LANGUAGE RULE: Your segment titles MUST be written in the SAME LANGUAGE as the transcript. Detect the language from the transcript text and use it.
+═══════════════════════════════════════════════════════
+LANGUAGE RULE (CRITICAL):
+Your segment titles MUST be written in the EXACT SAME language as the transcript.
+Detect the language from the transcript text and use it for all titles.
+═══════════════════════════════════════════════════════
 
-DURATION RULES (CRITICAL):
+DURATION RULES (CRITICAL — STRICTLY ENFORCED):
 1. Each segment MUST be between ${minDuration}s and ${durationOption}s (hard limits)
-2. TARGET each segment to be ${targetMin}–${durationOption}s — closer to the max is better
+2. TARGET each segment to be ${targetMin}–${durationOption}s — closer to the max is BETTER
 3. NEVER generate a segment shorter than ${minDuration} seconds
 4. Prefer FEWER high-quality, longer segments over many short useless clips
-5. Each segment must contain a COMPLETE thought or story arc — never cut mid-sentence or mid-idea
 
-CONTENT RULES:
-1. Segments must not overlap
-2. Start and end times must align with natural speech boundaries (don't cut mid-word)
-3. Prefer starting/ending at silence gaps or natural pauses
-4. Prioritize segments with:
-   - Strong hooks or attention-grabbing openings
-   - Complete thoughts or stories
-   - Emotional moments
-   - Actionable advice or key insights
-   - Surprising or controversial statements
-5. Score each segment from 0.0 to 1.0 based on viral potential
-6. Give each segment a catchy, clickbait-style title IN THE SAME LANGUAGE as the transcript
+═══════════════════════════════════════════════════════
+CONTENT QUALITY RULES (CRITICAL):
+═══════════════════════════════════════════════════════
+1. Each segment MUST contain a COMPLETE thought, idea, or story arc
+   - NEVER cut mid-sentence or mid-idea
+   - The segment must make sense on its own without additional context
+   - Start and end at natural sentence boundaries
+2. Segments must NOT overlap
+3. Start and end times MUST align with natural speech boundaries (never cut mid-word)
+4. ALWAYS prefer starting/ending at silence gaps or natural pauses
+5. AVOID segments that:
+   - Contain long silences (>2s) in the middle — these feel awkward
+   - Start or end abruptly mid-conversation
+   - Are filler/boring/repetitive
+   - Lack a clear point or takeaway
+6. PRIORITIZE segments with:
+   - Strong hooks or attention-grabbing openings (first 3 seconds matter!)
+   - Complete thoughts or stories with a clear beginning → middle → end
+   - Emotional peaks: surprise, humor, anger, inspiration, controversy
+   - Actionable advice, key insights, or "aha moments"
+   - Surprising or controversial statements that make people stop scrolling
+   - High speech density (speaker is actively talking, not pausing)
+
+═══════════════════════════════════════════════════════
+SCORING RULES:
+═══════════════════════════════════════════════════════
+Score each segment from 0.0 to 1.0 based on VIRAL POTENTIAL:
+- 0.9–1.0: Exceptional — would go viral on its own (strong hook + emotional + complete)
+- 0.7–0.8: Great — engaging, shareable content
+- 0.5–0.6: Good — solid content but not exceptional
+- Below 0.5: Don't include it — quality over quantity
+
+PENALIZE segments with:
+- Long internal silences (>2s gaps between words)
+- No clear point or takeaway
+- Boring/repetitive content
+- Incomplete sentences or ideas
+
+Give each segment a catchy, clickbait-style title IN THE SAME LANGUAGE as the transcript.
 
 Return ONLY a valid JSON array with this exact format (no markdown, no explanation):
 [
   {
     "start": 32.5,
     "end": 62.1,
-    "title": "Catchy title here",
+    "title": "Catchy title here in same language as transcript",
     "score": 0.95
   }
 ]`;
@@ -234,15 +371,38 @@ Return ONLY a valid JSON array with this exact format (no markdown, no explanati
     throw new Error("No response from Mistral AI");
   }
 
-  // Parse the JSON response
+  // Parse the JSON response — handle multiple possible wrapper keys
   let segments: Segment[];
   try {
     const parsed = JSON.parse(content);
-    // Handle both direct array and object with segments key
-    segments = Array.isArray(parsed) ? parsed : parsed.segments || [];
+    if (Array.isArray(parsed)) {
+      segments = parsed;
+    } else {
+      // Try common wrapper keys that Mistral might use
+      segments =
+        parsed.segments ||
+        parsed.clips ||
+        parsed.results ||
+        parsed.data ||
+        parsed.shorts ||
+        [];
+      if (segments.length === 0) {
+        // Fallback: grab the first array-valued property
+        const arrayProp = Object.values(parsed).find(Array.isArray);
+        if (arrayProp) segments = arrayProp as Segment[];
+      }
+    }
   } catch {
     throw new Error(`Failed to parse Mistral response: ${content}`);
   }
+
+  console.log(
+    `[Mistral] Raw segments from AI: ${segments.length}`,
+    segments.map(
+      (s) =>
+        `"${s.title}" ${s.start}–${s.end}s (${(s.end - s.start).toFixed(1)}s, score=${s.score})`,
+    ),
+  );
 
   // Validate and clean segments (basic)
   segments = segments

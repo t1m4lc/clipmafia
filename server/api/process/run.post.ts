@@ -258,7 +258,7 @@ export async function processVideoJob(
 
     const totalSegments = segments.length;
     for (let i = 0; i < totalSegments; i++) {
-      const segment = segments[i];
+      const segment = segments[i]!;
       const segmentProgress = 55 + Math.round((i / totalSegments) * 20);
 
       await updateJobStatus(jobId, "processing_video", segmentProgress);
@@ -299,9 +299,17 @@ export async function processVideoJob(
         );
       }
 
-      const segmentWords = (transcript || []).filter(
-        (w) => w.start >= segment.start && w.end <= segment.end,
-      );
+      // Use overlap logic instead of strict containment:
+      // Include words that overlap with the segment by at least 50% of the word's duration,
+      // so boundary words aren't silently dropped.
+      const segmentWords = (transcript || []).filter((w) => {
+        if (w.end <= segment.start || w.start >= segment.end) return false;
+        const wordDur = w.end - w.start;
+        const overlapStart = Math.max(w.start, segment.start);
+        const overlapEnd = Math.min(w.end, segment.end);
+        const overlap = overlapEnd - overlapStart;
+        return overlap >= wordDur * 0.5; // include if ≥50% of the word is inside the segment
+      });
 
       // Adjust timestamps relative to segment start
       const adjustedWords = segmentWords.map((w) => ({

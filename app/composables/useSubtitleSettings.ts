@@ -32,10 +32,24 @@ export function useSubtitleSettings() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        settings.value = {
-          ...DEFAULT_SUBTITLE_SETTINGS,
-          ...JSON.parse(stored),
-        };
+        const parsed = JSON.parse(stored);
+        // Migration guard: old settings used "phone pixels" (typical fontSize: 8–32).
+        // New system uses video pixels (1080×1920), so fontSize should be ≥ 16.
+        // If the stored value is too small, it's a stale setting — reset to defaults.
+        if (typeof parsed.fontSize === "number" && parsed.fontSize < 16) {
+          console.log(
+            "[useSubtitleSettings] Stale settings detected (fontSize=" +
+              parsed.fontSize +
+              "), resetting to defaults",
+          );
+          settings.value = { ...DEFAULT_SUBTITLE_SETTINGS };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(settings.value));
+        } else {
+          settings.value = {
+            ...DEFAULT_SUBTITLE_SETTINGS,
+            ...parsed,
+          };
+        }
       }
     } catch {
       // ignore parse errors

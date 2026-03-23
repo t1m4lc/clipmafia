@@ -1,39 +1,44 @@
 /**
  * Centralized Overlay Configuration
  * Single source of truth for subtitle styles, watermark settings, and positioning rules.
+ *
+ * ALL values (fontSize, outline, shadow, marginV) are in VIDEO PIXELS (1080×1920).
+ * The preview scales them down proportionally via CSS transform.
+ * FFmpeg uses them directly in the ASS file (PlayResX=1080, PlayResY=1920).
+ * No conversion, no ratio, no phone-pixel concept.
  */
 
 // ─── Subtitle Defaults ───────────────────────────────────────────────────────
 
 export interface SubtitleStyleConfig {
   fontName: string;
-  fontSize: number;
+  fontSize: number; // video pixels (1080×1920)
   primaryColor: string; // hex "#RRGGBB"
   outlineColor: string; // hex "#RRGGBB"
   bold: boolean;
-  outline: number;
-  shadow: number;
-  marginV: number;
+  outline: number; // video pixels
+  shadow: number; // video pixels
+  marginV: number; // video pixels
   alignment: number; // ASS alignment: 2=bottom, 5=center, 8=top
 }
 
 export const DEFAULT_SUBTITLE_STYLE: SubtitleStyleConfig = {
   fontName: "Arial",
-  fontSize: 12,
+  fontSize: 72,
   primaryColor: "#FFFFFF",
   outlineColor: "#000000",
   bold: true,
-  outline: 2,
-  shadow: 1,
-  marginV: 12,
+  outline: 5,
+  shadow: 2,
+  marginV: 80,
   alignment: 2,
 };
 
 // ─── Subtitle Input Ranges ───────────────────────────────────────────────────
 
 export const SUBTITLE_RANGES = {
-  fontSize: { min: 8, max: 32, step: 1 },
-  marginV: { min: 0, max: 24, step: 1 },
+  fontSize: { min: 16, max: 96, step: 1 },
+  marginV: { min: 0, max: 200, step: 2 },
 } as const;
 
 // ─── Watermark Settings ──────────────────────────────────────────────────────
@@ -41,65 +46,40 @@ export const SUBTITLE_RANGES = {
 export interface WatermarkConfig {
   text: string;
   fontName: string;
-  fontSize: number;
-  color: string; // hex "#RRGGBB"
-  outlineColor: string; // hex "#RRGGBB"
+  fontSize: number; // video pixels
+  color: string;
+  outlineColor: string;
   outline: number;
   shadow: number;
-  marginV: number;
-  opacity: number; // 0.0–1.0
+  marginV: number; // video pixels
+  opacity: number;
 }
 
 export const WATERMARK_CONFIG: WatermarkConfig = {
   text: "made with Clipmafia",
   fontName: "Arial",
-  fontSize: 9,
+  fontSize: 20,
   color: "#CCCCCC",
   outlineColor: "#000000",
   outline: 1,
   shadow: 0,
-  marginV: 12,
+  marginV: 30,
   opacity: 0.7,
 };
 
 // ─── Positioning Rules ──────────────────────────────────────────────────────
 
-/**
- * Determine watermark alignment based on subtitle alignment.
- * Rule: watermark must never overlap subtitles.
- *  - Subtitles bottom  (alignment 1–3) → watermark top   (alignment 8)
- *  - Subtitles top     (alignment 7–9) → watermark bottom (alignment 2)
- *  - Subtitles center  (alignment 4–6) → watermark bottom (alignment 2)
- */
 export function getWatermarkAlignment(subtitleAlignment: number): number {
-  if (subtitleAlignment >= 1 && subtitleAlignment <= 3) return 8; // top
-  return 2; // bottom
+  if (subtitleAlignment >= 1 && subtitleAlignment <= 3) return 8;
+  return 2;
 }
 
 // ─── Video Rendering Constants ──────────────────────────────────────────────
 
 export const RENDER = {
-  /** Output width of vertical shorts (9:16) */
   width: 1080,
-  /** Output height of vertical shorts (9:16) */
   height: 1920,
-  /** ASS PlayResX / PlayResY must match these */
-  playResX: 1080,
-  playResY: 1920,
 } as const;
-
-// ─── Preview / Phone Mockup Constants ───────────────────────────────────────
-// fontSize and marginV stored in the settings are "phone screen pixels"
-// (what looks natural on a 390px-wide phone).
-// FFmpeg must scale them to ASS coordinates using PREVIEW_TO_ASS_SCALE.
-
-export const PHONE_PREVIEW = {
-  width: 390,
-  height: 844,
-} as const;
-
-/** Multiply fontSize / marginV by this to get ASS coordinate values for FFmpeg. */
-export const PREVIEW_TO_ASS_SCALE = RENDER.width / PHONE_PREVIEW.width; // ≈ 2.77
 
 // ─── Segment Duration Constraints ───────────────────────────────────────────
 

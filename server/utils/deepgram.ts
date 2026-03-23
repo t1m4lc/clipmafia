@@ -114,17 +114,40 @@ export async function transcribeAudio(
 
 /**
  * Group transcript words into sentence-like segments for subtitle display.
+ *
+ * Silence-aware: if the gap between consecutive words exceeds
+ * `silenceGapThreshold` seconds (default 1.5 s), a new subtitle block is
+ * forced regardless of word count.  This prevents a single subtitle from
+ * spanning a long pause (e.g. "je ne les fais … [2 s silence] … pas sortir").
  */
 export function groupWordsIntoSegments(
   words: TranscriptWord[],
-  maxWordsPerSegment: number = 8,
+  maxWordsPerSegment: number = 6,
+  silenceGapThreshold: number = 1.5,
 ): TranscriptWord[] {
   const segments: TranscriptWord[] = [];
   let currentSegment: TranscriptWord | null = null;
   let wordCount = 0;
 
-  for (const word of words) {
-    if (!currentSegment || wordCount >= maxWordsPerSegment) {
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i]!;
+
+    // Detect silence gap between the previous word and this one
+    const silenceGap =
+      currentSegment && i > 0
+        ? word.start - (words[i - 1]?.end ?? word.start)
+        : 0;
+
+    // Force a new subtitle block if:
+    //  • first word
+    //  • max words reached
+    //  • silence gap exceeds threshold
+    const shouldSplit =
+      !currentSegment ||
+      wordCount >= maxWordsPerSegment ||
+      silenceGap >= silenceGapThreshold;
+
+    if (shouldSplit) {
       if (currentSegment) {
         segments.push(currentSegment);
       }
@@ -135,11 +158,17 @@ export function groupWordsIntoSegments(
         confidence: word.confidence,
       };
       wordCount = 1;
+
+      if (silenceGap >= silenceGapThreshold) {
+        console.log(
+          `[groupWords] Silence split: ${silenceGap.toFixed(2)}s gap before "${word.text}" at ${word.start.toFixed(1)}s`,
+        );
+      }
     } else {
-      currentSegment.end = word.end;
-      currentSegment.text += ` ${word.text}`;
-      currentSegment.confidence = Math.min(
-        currentSegment.confidence || 1,
+      currentSegment!.end = word.end;
+      currentSegment!.text += ` ${word.text}`;
+      currentSegment!.confidence = Math.min(
+        currentSegment!.confidence || 1,
         word.confidence || 1,
       );
       wordCount++;

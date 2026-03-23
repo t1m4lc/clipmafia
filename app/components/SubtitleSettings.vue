@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { SubtitleSettings } from '~/types/database'
-import { SUBTITLE_RANGES, PHONE_PREVIEW } from '~/lib/overlayConfig'
+import { SUBTITLE_RANGES, RENDER } from '~/lib/overlayConfig'
 
 const props = defineProps<{
   modelValue: SubtitleSettings
@@ -27,8 +27,8 @@ const fontOptions = [
 ]
 
 const positionOptions = [
-  { label: 'Bottom', alignment: 2, marginV: 12 },
-  { label: 'Top', alignment: 8, marginV: 12 },
+  { label: 'Bottom', alignment: 2, marginV: 50 },
+  { label: 'Top', alignment: 8, marginV: 50 },
   { label: 'Middle', alignment: 5, marginV: 0 },
 ]
 
@@ -43,16 +43,16 @@ function setPosition(option: typeof positionOptions[number]) {
 
 const previewSample = computed(() => props.sampleText || 'Your subtitle text\nwill appear here')
 
-// ─── Phone mockup scale math ─────────────────────────────────────────────────
-// fontSize and marginV are stored as "phone screen pixels" (390px-wide reference).
-// We render the mockup at phone dimensions and CSS-scale down to DISPLAY_H.
-// This gives accurate 1:1 preview — what you set is what you see on a real phone.
+// ─── Preview scale math ─────────────────────────────────────────────────────
+// All values (fontSize, marginV, outline…) are stored in VIDEO PIXELS (1080×1920).
+// The preview container is 1080×1920 but CSS-scaled down to fit DISPLAY_H.
+// This way: what you see in the preview = exactly what FFmpeg renders.
 const DISPLAY_H = 640
-const phoneScale = DISPLAY_H / PHONE_PREVIEW.height   // 640/844 ≈ 0.758
-const displayW = Math.round(PHONE_PREVIEW.width * phoneScale) // ≈ 296
+const previewScale = DISPLAY_H / RENDER.height                    // 640/1920 ≈ 0.333
+const displayW = Math.round(RENDER.width * previewScale)          // ≈ 360
 
-// ─── Subtitle text style in phone screen-pixel space ─────────────────────────
-const phoneSubtitleStyle = computed(() => {
+// ─── Subtitle text style (in video pixels, scaled down by CSS transform) ──
+const subtitleStyle = computed(() => {
   const s = settings.value
   return {
     fontFamily: s.fontName,
@@ -66,21 +66,21 @@ const phoneSubtitleStyle = computed(() => {
        ${s.outline}px  ${s.outline}px 0 ${s.outlineColor}
     `,
     textAlign: 'center' as const,
-    padding: '4px 12px',
+    padding: '8px 30px',
     lineHeight: '1.4',
     maxWidth: '100%',
     whiteSpace: 'pre-line' as const,
   }
 })
 
-// Position in the phone-sized container (marginV is in phone screen pixels)
-const phoneSubtitlePositionStyle = computed(() => {
+// Position in the 1080×1920 container (marginV is in video pixels)
+const subtitlePositionStyle = computed(() => {
   const s = settings.value
   const isBottom = s.alignment <= 3
   const isTop = s.alignment >= 7
-  const base = { position: 'absolute' as const, left: '0', right: '0', display: 'flex', justifyContent: 'center', padding: '0 24px' }
-  if (isBottom) return { ...base, bottom: `${s.marginV + 20}px` }
-  if (isTop)    return { ...base, top: `${s.marginV + 44}px` }
+  const base = { position: 'absolute' as const, left: '0', right: '0', display: 'flex', justifyContent: 'center', padding: '0 60px' }
+  if (isBottom) return { ...base, bottom: `${s.marginV + 40}px` }
+  if (isTop)    return { ...base, top: `${s.marginV + 80}px` }
   return { ...base, top: '50%', transform: 'translateY(-50%)' }
 })
 </script>
@@ -112,7 +112,7 @@ const phoneSubtitlePositionStyle = computed(() => {
           <input
             type="range"
             :value="settings.fontSize"
-            min="14" max="60" step="1"
+            :min="SUBTITLE_RANGES.fontSize.min" :max="SUBTITLE_RANGES.fontSize.max" :step="SUBTITLE_RANGES.fontSize.step"
             class="w-full accent-primary mt-3"
             @input="update('fontSize', Number(($event.target as HTMLInputElement).value))"
           />
@@ -206,7 +206,7 @@ const phoneSubtitlePositionStyle = computed(() => {
       <!-- Header -->
       <div class="flex w-full items-center justify-between" :style="{ width: displayW + 'px' }">
         <span class="text-sm font-medium">Live Preview</span>
-        <span class="text-xs text-muted-foreground">1080×1920</span>
+        <span class="text-xs text-muted-foreground">{{ RENDER.width }}&times;{{ RENDER.height }}</span>
       </div>
 
       <!-- Outer wrapper: reserves the final CSS footprint -->
@@ -214,46 +214,46 @@ const phoneSubtitlePositionStyle = computed(() => {
         class="relative"
         :style="{ width: displayW + 'px', height: DISPLAY_H + 'px' }"
       >
-        <!-- Phone-sized container, CSS-scaled to DISPLAY_H —
-             fontSize/marginV in the settings are phone screen pixels so they
-             render here at exactly the right visual proportion. -->
+        <!-- 1080×1920 container CSS-scaled down to DISPLAY_H.
+             All values (fontSize, marginV…) are in video pixels so
+             what you see here = exactly what FFmpeg renders. -->
         <div
           class="absolute top-0 left-0 overflow-hidden"
           :style="{
-            width: PHONE_PREVIEW.width + 'px',
-            height: PHONE_PREVIEW.height + 'px',
-            transform: `scale(${phoneScale})`,
+            width: RENDER.width + 'px',
+            height: RENDER.height + 'px',
+            transform: `scale(${previewScale})`,
             transformOrigin: 'top left',
-            borderRadius: '44px',
-            border: '3px solid rgb(71 85 105)',
+            borderRadius: '120px',
+            border: '8px solid rgb(71 85 105)',
             boxShadow: '0 25px 60px rgba(0,0,0,0.55)',
             background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 50%, #000 100%)',
           }"
         >
-          <!-- Abstract video background: colored blur blobs -->
+          <!-- Abstract video background -->
           <div class="absolute inset-0 overflow-hidden">
-            <div class="absolute top-20 left-8 w-56 h-56 rounded-full opacity-30" style="background: radial-gradient(circle, #6366f1, transparent); filter: blur(40px);" />
-            <div class="absolute top-40 right-8 w-48 h-48 rounded-full opacity-25" style="background: radial-gradient(circle, #ec4899, transparent); filter: blur(35px);" />
-            <div class="absolute bottom-48 left-16 w-40 h-40 rounded-full opacity-20" style="background: radial-gradient(circle, #06b6d4, transparent); filter: blur(30px);" />
+            <div class="absolute rounded-full opacity-30" style="top: 55px; left: 22px; width: 430px; height: 430px; background: radial-gradient(circle, #6366f1, transparent); filter: blur(110px);" />
+            <div class="absolute rounded-full opacity-25" style="top: 300px; right: 22px; width: 370px; height: 370px; background: radial-gradient(circle, #ec4899, transparent); filter: blur(95px);" />
+            <div class="absolute rounded-full opacity-20" style="bottom: 200px; left: 80px; width: 310px; height: 310px; background: radial-gradient(circle, #06b6d4, transparent); filter: blur(80px);" />
             <!-- Faint person silhouette -->
-            <div class="absolute bottom-24 left-1/2 -translate-x-1/2 opacity-[0.07]" style="width: 120px; height: 280px; background: linear-gradient(180deg, white 0%, rgba(255,255,255,0.4) 100%); border-radius: 60px 60px 30px 30px;" />
+            <div class="absolute left-1/2 -translate-x-1/2 opacity-[0.07]" style="bottom: 120px; width: 330px; height: 770px; background: linear-gradient(180deg, white 0%, rgba(255,255,255,0.4) 100%); border-radius: 165px 165px 80px 80px;" />
           </div>
 
-          <!-- Subtitle layer (positioned at full render resolution) -->
-          <div :style="phoneSubtitlePositionStyle">
-            <div :style="phoneSubtitleStyle">
+          <!-- Subtitle layer -->
+          <div :style="subtitlePositionStyle">
+            <div :style="subtitleStyle">
               {{ previewSample }}
             </div>
           </div>
 
           <!-- Home indicator -->
-          <div class="absolute left-1/2 -translate-x-1/2 bg-white/40 rounded-full" style="bottom: 8px; width: 134px; height: 5px;" />
+          <div class="absolute left-1/2 -translate-x-1/2 bg-white/40 rounded-full" style="bottom: 22px; width: 370px; height: 14px;" />
         </div>
       </div>
 
       <!-- Scale info -->
       <p class="text-xs text-muted-foreground tabular-nums">
-        {{ Math.round(phoneScale * 100) }}% scale &middot; {{ PHONE_PREVIEW.width }}&times;{{ PHONE_PREVIEW.height }}pt
+        {{ Math.round(previewScale * 100) }}% scale &middot; {{ RENDER.width }}&times;{{ RENDER.height }}px
       </p>
     </div>
 
