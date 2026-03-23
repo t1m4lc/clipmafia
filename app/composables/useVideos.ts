@@ -249,16 +249,25 @@ export function useVideos() {
 
   /**
    * Fetch generated shorts for a video.
+   * Default sort: by score descending (most viral first).
    */
-  async function fetchShorts(videoId: string) {
+  async function fetchShorts(
+    videoId: string,
+    sortBy: "score" | "chronological" = "score",
+  ) {
     if (!user.value) return;
+
+    const order =
+      sortBy === "chronological"
+        ? { column: "start_time" as const, ascending: true }
+        : { column: "score" as const, ascending: false };
 
     const { data, error } = await supabase
       .from("shorts")
       .select("*")
       .eq("video_id", videoId)
       .eq("user_id", user.value.id)
-      .order("score", { ascending: false });
+      .order(order.column, { ascending: order.ascending });
 
     if (error) {
       console.error("Failed to fetch shorts:", error);
@@ -268,14 +277,43 @@ export function useVideos() {
   }
 
   /**
-   * Get a download URL for a short video.
+   * Get a signed download URL for a short video via server API.
+   * This avoids 400 errors from client-side signed URL generation on private buckets.
    */
-  async function getDownloadUrl(storagePath: string): Promise<string> {
-    const { data } = await supabase.storage
-      .from("shorts")
-      .createSignedUrl(storagePath, 3600); // 1 hour expiry
+  async function getDownloadUrl(shortId: string): Promise<string> {
+    try {
+      const data = await $fetch(`/api/shorts/${shortId}`);
+      return (data as any)?.url || "";
+    } catch (e) {
+      console.error("Failed to get download URL:", e);
+      return "";
+    }
+  }
 
-    return data?.signedUrl || "";
+  /**
+   * Delete a single generated short.
+   */
+  async function deleteShort(shortId: string): Promise<void> {
+    await $fetch(`/api/shorts/${shortId}`, { method: "DELETE" });
+    shorts.value = shorts.value.filter((s) => s.id !== shortId);
+  }
+
+  /**
+   * Upload multiple video files at once (batch upload).
+   */
+  async function uploadVideoBatch(
+    files: File[],
+    onProgress?: (index: number, total: number) => void,
+  ): Promise<any[]> {
+    const results: any[] = [];
+    for (let i = 0; i < files.length; i++) {
+      onProgress?.(i, files.length);
+      const file = files[i];
+      if (!file) continue;
+      const video = await uploadVideo(file);
+      results.push(video);
+    }
+    return results;
   }
 
   /**
@@ -390,12 +428,14 @@ export function useVideos() {
     fetchVideos,
     fetchVideo,
     uploadVideo,
+    uploadVideoBatch,
     generateShorts,
     fetchJob,
     pollJobStatus,
     fetchShorts,
     getDownloadUrl,
     deleteVideo,
+    deleteShort,
     hasTranscript,
     downloadTranscriptSrt,
     downloadTranscriptVtt,

@@ -212,6 +212,61 @@ export async function processSegment(
   return outputPath;
 }
 
+/** Convert SRT timestamp "HH:MM:SS,mmm" to ASS timestamp "H:MM:SS.cc" */
+function srtTimeToAss(t: string): string {
+  const m = t.match(/(\d{2}):(\d{2}):(\d{2}),(\d{3})/);
+  if (!m || !m[1] || !m[2] || !m[3] || !m[4]) return "0:00:00.00";
+  const cs = Math.round(parseInt(m[4]) / 10);
+  return `${parseInt(m[1])}:${m[2]}:${m[3]}.${String(cs).padStart(2, "0")}`;
+}
+
+/**
+ * Build a full ASS file with pop-in animation (fade + scale) from SRT content.
+ * Used when subtitleSettings.animated === true.
+ */
+function buildAssFile(srtContent: string, s: Required<SubtitleStyle>): string {
+  const primary = hexToAss(s.primaryColor);
+  const outline = hexToAss(s.outlineColor);
+
+  const header = [
+    "[Script Info]",
+    "ScriptType: v4.00+",
+    "PlayResX: 1080",
+    "PlayResY: 1920",
+    "WrapStyle: 1",
+    "",
+    "[V4+ Styles]",
+    "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+    `Style: Default,${s.fontName},${s.fontSize},${primary},&H000000FF,${outline},&H80000000,${s.bold ? -1 : 0},0,0,0,100,100,0,0,1,${s.outline},${s.shadow},${s.alignment},10,10,${s.marginV},1`,
+    "",
+    "[Events]",
+    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+  ].join("\n");
+
+  const dialogues: string[] = [];
+  for (const block of srtContent.trim().split(/\n\n+/)) {
+    const lines = block.trim().split("\n");
+    if (lines.length < 3 || !lines[1]) continue;
+    const match = lines[1].match(
+      /(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})/,
+    );
+    if (!match || !match[1] || !match[2]) continue;
+    const text = lines
+      .slice(2)
+      .join(" ")
+      .replace(/<[^>]+>/g, ""); // strip any HTML tags
+    const start = srtTimeToAss(match[1]);
+    const end = srtTimeToAss(match[2]);
+    // \fad(180,0)  → fade in 180 ms, no fade out
+    // \t(0,300,\fscx115\fscy115)\t(300,450,\fscx100\fscy100) → pop scale
+    dialogues.push(
+      `Dialogue: 0,${start},${end},Default,,0,0,0,,{\\fad(180,0)\\t(0,300,\\fscx115\\fscy115)\\t(300,450,\\fscx100\\fscy100)}${text}`,
+    );
+  }
+
+  return header + "\n" + dialogues.join("\n");
+}
+
 /**
  * Burn subtitles into a video using FFmpeg.
  * Uses SRT file with styled subtitles optimized for mobile viewing.
@@ -229,18 +284,81 @@ export async function burnSubtitles(
     return outputPath;
   }
 
-  const s = { ...DEFAULT_SUBTITLE_STYLE, ...style };
+  // Defensive merge: filter out undefined/null values so they never override defaults
+  // (e.g. old localStorage settings that lack 'outline'/'shadow' keys)
+  const filteredStyle: Partial<SubtitleStyle> = {};
+  if (style) {
+    for (const [k, v] of Object.entries(style)) {
+      if (v !== undefined && v !== null) {
+        (filteredStyle as Record<string, unknown>)[k] = v;
+      }
+    }
+  }
+  const s = {
+    ...DEFAULT_SUBTITLE_STYLE,
+    ...filteredStyle,
+  } as Required<SubtitleStyle>;
 
-  // Write SRT to the SAME directory as the input video (job temp dir).
-  const srtPath = join(dirname(inputPath), `subs_${Date.now()}.srt`);
+  // Shared path-escaping for ffmpeg filter-graph syntax
+  function escapePath(p: string): string {
+    return p
+      .replace(/\\/g, "\\\\")
+      .replace(/'/g, "\\'")
+      .replace(/:/g, "\\:")
+      .replace(/\[/g, "\\[")
+      .replace(/\]/g, "\\]");
+  }
+
+  const baseFilename = `subs_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  if (s.animated) {
+    // ── Animated path: generate a proper ASS file with \fad + pop-scale ──
+    // This is more reliable than embedding ASS override tags in SRT, and
+    // avoids the "undefined in force_style" issue entirely.
+    const assPath = join(dirname(inputPath), `${baseFilename}.ass`);
+    await writeFile(assPath, buildAssFile(srtContent, s), "utf-8");
+    try {
+      await runFfmpeg([
+        "-y",
+        "-i",
+        inputPath,
+        "-vf",
+        `ass='${escapePath(assPath)}'`,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-crf",
+        "23",
+        "-c:a",
+        "copy",
+        "-movflags",
+        "+faststart",
+        outputPath,
+      ]);
+    } finally {
+      await unlink(assPath).catch(() => {});
+    }
+    return outputPath;
+  }
+
+  // ── Non-animated path: SRT + force_style ──
+  const srtPath = join(dirname(inputPath), `${baseFilename}.srt`);
   await writeFile(srtPath, srtContent, "utf-8");
+
+  // Verify SRT file was written
+  const { stat } = await import("fs/promises");
+  const srtStat = await stat(srtPath).catch(() => null);
+  if (!srtStat) {
+    throw new Error(`Failed to write subtitle file to ${srtPath}`);
+  }
 
   // Build ASS force_style string from the SubtitleStyle
   const subtitleStyle = [
     `FontName=${s.fontName}`,
     `FontSize=${s.fontSize}`,
-    `PrimaryColour=${hexToAss(s.primaryColor!)}`,
-    `OutlineColour=${hexToAss(s.outlineColor!)}`,
+    `PrimaryColour=${hexToAss(s.primaryColor)}`,
+    `OutlineColour=${hexToAss(s.outlineColor)}`,
     "BackColour=&H80000000",
     `Bold=${s.bold ? 1 : 0}`,
     `Outline=${s.outline}`,
@@ -249,15 +367,7 @@ export async function burnSubtitles(
     `Alignment=${s.alignment}`,
   ].join(",");
 
-  // Escape path for ffmpeg's filter-graph syntax.
-  const escapedSrtPath = srtPath
-    .replace(/\\/g, "\\\\") // backslash first
-    .replace(/'/g, "\\'") // single quote
-    .replace(/:/g, "\\:") // colon
-    .replace(/\[/g, "\\[")
-    .replace(/\]/g, "\\]");
-
-  const vfFilter = `subtitles='${escapedSrtPath}':force_style='${subtitleStyle}'`;
+  const vfFilter = `subtitles='${escapePath(srtPath)}':force_style='${subtitleStyle}'`;
 
   try {
     await runFfmpeg([

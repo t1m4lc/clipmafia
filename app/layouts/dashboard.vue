@@ -18,17 +18,11 @@ onMounted(() => {
         <div class="flex items-center gap-6">
           <NuxtLink to="/dashboard" class="flex items-center gap-2 font-bold text-xl">
             <span class="text-2xl">🎬</span>
-            <span class="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">ClipMafia</span>
+            <span class="bg-gradient-to-r from-primary to-purple-400 bg-clip-text">ClipMafia</span>
           </NuxtLink>
 
-          <div class="hidden md:flex items-center gap-4">
-            <NuxtLink to="/dashboard" class="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-              Dashboard
-            </NuxtLink>
-            <NuxtLink to="/dashboard/upload" class="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-              Upload
-            </NuxtLink>
-          </div>
+          <!-- <div class="hidden md:flex items-center gap-4">
+          </div> -->
         </div>
 
         <div class="flex items-center gap-4">
@@ -60,11 +54,11 @@ onMounted(() => {
 
       <!-- Mobile menu -->
       <div v-if="mobileMenuOpen" class="md:hidden border-t p-4 space-y-3">
-        <NuxtLink to="/dashboard" class="block text-sm font-medium" @click="mobileMenuOpen = false">
-          Dashboard
-        </NuxtLink>
         <NuxtLink to="/dashboard/upload" class="block text-sm font-medium" @click="mobileMenuOpen = false">
           Upload
+        </NuxtLink>
+        <NuxtLink to="/dashboard/settings" class="block text-sm font-medium" @click="mobileMenuOpen = false">
+          ⚙️ Settings
         </NuxtLink>
         <NuxtLink to="/pricing" class="block text-sm font-medium" @click="mobileMenuOpen = false">
           Pricing

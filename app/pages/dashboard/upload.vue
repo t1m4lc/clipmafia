@@ -4,7 +4,7 @@ definePageMeta({
   middleware: 'auth',
 })
 
-const { uploadVideo } = useVideos()
+const { uploadVideo, uploadVideoBatch } = useVideos()
 const { profile, canProcessVideo, fetchProfile, getUploadLimit, getUploadLimitInfo } = useProfile()
 
 // Computed limits for the current user plan
@@ -14,8 +14,9 @@ const uploadLimitBytes = computed(() => getUploadLimit())
 const uploading = ref(false)
 const dragOver = ref(false)
 const uploadProgress = ref(0)
+const uploadCurrent = ref(0)
 const errorMessage = ref('')
-const selectedFile = ref<File | null>(null)
+const selectedFiles = ref<File[]>([])
 
 onMounted(() => {
   fetchProfile()
@@ -35,45 +36,52 @@ function handleDrop(e: DragEvent) {
   dragOver.value = false
   const files = e.dataTransfer?.files
   if (files && files.length > 0) {
-    selectFile(files[0])
+    addFiles(Array.from(files))
   }
 }
 
 function handleFileInput(e: Event) {
   const input = e.target as HTMLInputElement
   if (input.files && input.files.length > 0) {
-    selectFile(input.files[0])
+    addFiles(Array.from(input.files))
   }
 }
 
-function selectFile(file: File) {
-  // Validate file type
+function addFiles(files: File[]) {
   const validTypes = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm', 'video/x-matroska']
-  if (!validTypes.includes(file.type)) {
-    errorMessage.value = 'Please upload a valid video file (MP4, MOV, AVI, WebM, MKV)'
-    return
-  }
-
-  // Validate file size based on subscription plan
   const limitBytes = uploadLimitBytes.value
-  if (limitBytes !== Infinity && file.size > limitBytes) {
-    const info = uploadLimitInfo.value
-    const limitLabel = info ? `${info.mb} MB (≈ ${info.minutes} min)` : '?'
-    const plan = profile.value?.subscription_plan ?? 'free'
-    if (plan === 'free') {
-      errorMessage.value = `File exceeds your free plan limit of ${limitLabel}. Upgrade to upload longer videos.`
-    } else {
-      errorMessage.value = `File exceeds your plan limit of ${limitLabel}.`
+  const errors: string[] = []
+
+  for (const file of files) {
+    if (!validTypes.includes(file.type)) {
+      errors.push(`"${file.name}" is not a supported video format.`)
+      continue
     }
-    return
+    if (limitBytes !== Infinity && file.size > limitBytes) {
+      const info = uploadLimitInfo.value
+      const limitLabel = info ? `${info.mb} MB` : '?'
+      errors.push(`"${file.name}" exceeds the ${limitLabel} limit.`)
+      continue
+    }
+    // Avoid duplicates
+    if (!selectedFiles.value.some((f: File) => f.name === file.name && f.size === file.size)) {
+      selectedFiles.value.push(file)
+    }
   }
 
-  errorMessage.value = ''
-  selectedFile.value = file
+  if (errors.length > 0) {
+    errorMessage.value = errors.join(' ')
+  } else {
+    errorMessage.value = ''
+  }
+}
+
+function removeFile(index: number) {
+  selectedFiles.value.splice(index, 1)
 }
 
 async function handleUpload() {
-  if (!selectedFile.value) return
+  if (selectedFiles.value.length === 0) return
 
   if (!canProcessVideo()) {
     errorMessage.value = 'You have reached your monthly video limit. Please upgrade your plan.'
@@ -82,23 +90,29 @@ async function handleUpload() {
 
   uploading.value = true
   uploadProgress.value = 0
+  uploadCurrent.value = 0
   errorMessage.value = ''
 
   try {
-    // Simulate progress
-    const progressInterval = setInterval(() => {
-      if (uploadProgress.value < 90) {
-        uploadProgress.value += 10
-      }
-    }, 500)
+    if (selectedFiles.value.length === 1) {
+      // Single file: navigate directly to its page
+      const progressInterval = setInterval(() => {
+        if (uploadProgress.value < 90) uploadProgress.value += 10
+      }, 500)
 
-    const video = await uploadVideo(selectedFile.value)
-
-    clearInterval(progressInterval)
-    uploadProgress.value = 100
-
-    // Navigate to video page
-    await navigateTo(`/dashboard/videos/${video.id}`)
+      const video = await uploadVideo(selectedFiles.value[0]!) as any
+      clearInterval(progressInterval)
+      uploadProgress.value = 100
+      await navigateTo(`/dashboard/videos/${video.id}`)
+    } else {
+      // Batch: upload sequentially and go to dashboard
+      const videos = await uploadVideoBatch(selectedFiles.value, (idx: number, total: number) => {
+        uploadCurrent.value = idx + 1
+        uploadProgress.value = Math.round(((idx) / total) * 100)
+      })
+      uploadProgress.value = 100
+      await navigateTo('/dashboard')
+    }
   } catch (e: any) {
     errorMessage.value = e.message || 'Upload failed. Please try again.'
     uploading.value = false
@@ -115,8 +129,8 @@ function formatFileSize(bytes: number): string {
 <template>
   <div class="max-w-2xl mx-auto space-y-8">
     <div>
-      <h1 class="text-3xl font-bold">Upload Video</h1>
-      <p class="text-muted-foreground mt-1">Upload a horizontal video to generate shorts</p>
+      <h1 class="text-3xl font-bold">Upload Videos</h1>
+      <p class="text-muted-foreground mt-1">Upload one or more horizontal videos to generate shorts</p>
     </div>
 
     <!-- Quota Warning -->
@@ -131,7 +145,6 @@ function formatFileSize(bytes: number): string {
     <Card>
       <CardContent class="pt-6">
         <div
-          v-if="!selectedFile"
           class="border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors"
           :class="dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50'"
           @dragover="handleDragOver"
@@ -144,16 +157,17 @@ function formatFileSize(bytes: number): string {
             type="file"
             class="hidden"
             accept="video/*"
+            multiple
             @change="handleFileInput"
           />
           <div class="space-y-4">
             <div class="text-5xl">📤</div>
             <div>
-              <p class="text-lg font-medium">Drop your video here or click to browse</p>
+              <p class="text-lg font-medium">Drop your videos here or click to browse</p>
               <p class="text-sm text-muted-foreground mt-1">
-                MP4, MOV, AVI, WebM, MKV •
+                MP4, MOV, AVI, WebM, MKV • You can select multiple files •
                 <span v-if="uploadLimitInfo">
-                  Max {{ uploadLimitInfo.mb }} MB (≈ {{ uploadLimitInfo.minutes }} min)
+                  Max {{ uploadLimitInfo.mb }} MB each (≈ {{ uploadLimitInfo.minutes }} min)
                   <NuxtLink v-if="profile?.subscription_plan === 'free'" to="/pricing" class="underline ml-1">Upgrade</NuxtLink>
                 </span>
                 <span v-else>Unlimited</span>
@@ -162,24 +176,31 @@ function formatFileSize(bytes: number): string {
           </div>
         </div>
 
-        <!-- Selected File -->
-        <div v-else class="space-y-4">
-          <div class="flex items-center gap-4 p-4 rounded-lg bg-muted">
-            <span class="text-3xl">🎬</span>
-            <div class="flex-1 min-w-0">
-              <p class="font-medium truncate">{{ selectedFile.name }}</p>
-              <p class="text-sm text-muted-foreground">{{ formatFileSize(selectedFile.size) }}</p>
+        <!-- Selected Files List -->
+        <div v-if="selectedFiles.length > 0" class="mt-4 space-y-4">
+          <div class="space-y-2">
+            <div v-for="(file, idx) in selectedFiles" :key="file.name + file.size" class="flex items-center gap-4 p-3 rounded-lg bg-muted">
+              <span class="text-2xl">🎬</span>
+              <div class="flex-1 min-w-0">
+                <p class="font-medium truncate text-sm">{{ file.name }}</p>
+                <p class="text-xs text-muted-foreground">{{ formatFileSize(file.size) }}</p>
+              </div>
+              <Button variant="ghost" size="sm" @click="removeFile(idx)" :disabled="uploading">
+                ✕
+              </Button>
             </div>
-            <Button variant="ghost" size="sm" @click="selectedFile = null; uploading = false" :disabled="uploading">
-              ✕
-            </Button>
           </div>
 
           <!-- Upload Progress -->
           <div v-if="uploading" class="space-y-2">
             <Progress :model-value="uploadProgress" />
             <p class="text-sm text-muted-foreground text-center">
-              Uploading... {{ uploadProgress }}%
+              <template v-if="selectedFiles.length > 1">
+                Uploading {{ uploadCurrent }} of {{ selectedFiles.length }}... {{ uploadProgress }}%
+              </template>
+              <template v-else>
+                Uploading... {{ uploadProgress }}%
+              </template>
             </p>
           </div>
 
@@ -190,7 +211,7 @@ function formatFileSize(bytes: number): string {
             size="lg"
             @click="handleUpload"
           >
-            🚀 Upload & Continue
+            🚀 Upload {{ selectedFiles.length > 1 ? `${selectedFiles.length} Videos` : '& Continue' }}
           </Button>
         </div>
 

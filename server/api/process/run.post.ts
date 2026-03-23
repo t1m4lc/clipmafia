@@ -2,6 +2,8 @@ import { join } from "path";
 import { unlink, readFile } from "fs/promises";
 import type { DurationOption, TranscriptWord, Segment } from "~/types/database";
 import type { SubtitleStyle } from "../../utils/ffmpeg";
+import { generateThumbnail } from "../../utils/ffmpeg";
+import { transcriptToSrt, groupWordsIntoSegments } from "../../utils/deepgram";
 
 /**
  * Step order used to determine which steps can be skipped on resume.
@@ -54,14 +56,8 @@ export async function processVideoJob(
   }
 
   try {
-    // Mark job as started
-    steps.extracting_audio = "loading";
-    await updateJobStatus(jobId, "extracting_audio", 5, {
-      started_at: new Date().toISOString(),
-      steps,
-    });
-
-    // Get video info (including cached transcript)
+    // Get video info (including cached transcript) FIRST,
+    // so we can skip steps the UI would otherwise briefly flash.
     const { data: video } = await supabase
       .from("videos")
       .select("*")
@@ -77,7 +73,7 @@ export async function processVideoJob(
     // Look for data from a previous failed/completed job
     const { data: previousJob } = await supabase
       .from("jobs")
-      .select("transcript, segments, failed_at_step")
+      .select("transcript, segments, failed_at_step, duration_option")
       .eq("video_id", videoId)
       .eq("user_id", userId)
       .neq("id", jobId)
@@ -85,22 +81,59 @@ export async function processVideoJob(
       .limit(1)
       .maybeSingle();
 
-    if (previousJob) {
-      if (!transcript && previousJob.transcript) {
-        transcript = previousJob.transcript as TranscriptWord[];
+    const pj = previousJob as any;
+    if (pj) {
+      if (!transcript && pj.transcript) {
+        transcript = pj.transcript as TranscriptWord[];
       }
-      if (previousJob.segments) {
-        segments = previousJob.segments as Segment[];
+      // Only reuse segments if the previous job used the SAME duration option.
+      if (pj.segments && pj.duration_option === durationOption) {
+        segments = pj.segments as Segment[];
       }
+    }
+
+    // Mark the correct starting step based on what's already cached.
+    // This prevents the UI from briefly flashing "Extract Audio" when
+    // the transcript (and possibly segments) are already available.
+    const hasTranscript = transcript && transcript.length > 0;
+    const hasSegments = segments && segments.length > 0;
+
+    if (hasSegments) {
+      // Skip all the way to video processing
+      steps.extracting_audio = "done";
+      steps.transcribing = "done";
+      steps.detecting_segments = "done";
+      steps.processing_video = "loading";
+      await updateJobStatus(jobId, "processing_video", 55, {
+        started_at: new Date().toISOString(),
+        steps,
+      });
+    } else if (hasTranscript) {
+      // Skip audio extraction and transcription
+      steps.extracting_audio = "done";
+      steps.transcribing = "done";
+      steps.detecting_segments = "loading";
+      await updateJobStatus(jobId, "detecting_segments", 35, {
+        started_at: new Date().toISOString(),
+        steps,
+      });
+    } else {
+      // Full pipeline from scratch
+      steps.extracting_audio = "loading";
+      await updateJobStatus(jobId, "extracting_audio", 5, {
+        started_at: new Date().toISOString(),
+        steps,
+      });
     }
 
     // Create temp directory for this job
     const tempDir = await ensureTempDir(jobId);
 
     // Download video from Supabase Storage
+    const v = video as any;
     const { data: videoFile } = await supabase.storage
       .from("videos")
-      .download(video.storage_path);
+      .download(v.storage_path);
 
     if (!videoFile) throw new Error("Failed to download video");
 
@@ -116,16 +149,11 @@ export async function processVideoJob(
     // Step 1: Extract Audio & Transcribe
     // Skip if we already have a cached transcript
     // =========================================
-    if (transcript && transcript.length > 0) {
+    if (hasTranscript) {
       console.log(
-        `Job ${jobId}: Reusing cached transcript (${transcript.length} words)`,
+        `Job ${jobId}: Reusing cached transcript (${transcript!.length} words)`,
       );
-      steps.extracting_audio = "done";
-      steps.transcribing = "done";
-      await updateJobStatus(jobId, "transcribing", 35, {
-        transcript: transcript,
-        steps,
-      });
+      // Status was already set above before the pipeline started
     } else {
       // Extract Audio
       steps.extracting_audio = "loading";
@@ -291,6 +319,31 @@ export async function processVideoJob(
           contentType: "video/mp4",
         });
 
+      // Generate and upload thumbnail
+      let thumbnailStoragePath: string | null = null;
+      try {
+        const thumbLocalPath = join(tempDir, `thumb_${i}.jpg`);
+        await generateThumbnail(subtitledPath, thumbLocalPath, 1);
+        const { readFile: rf } = await import("fs/promises");
+        const thumbBuffer = await rf(thumbLocalPath);
+        const thumbPath = `${userId}/${videoId}/thumb_${i}.jpg`;
+        const { error: thumbUploadError } = await supabase.storage
+          .from("thumbnails")
+          .upload(thumbPath, thumbBuffer, {
+            contentType: "image/jpeg",
+            upsert: true,
+          });
+        if (!thumbUploadError) {
+          thumbnailStoragePath = thumbPath;
+        }
+        await unlink(thumbLocalPath).catch(() => {});
+      } catch (thumbErr) {
+        console.warn(
+          `Job ${jobId}: thumbnail generation failed for segment ${i}:`,
+          thumbErr,
+        );
+      }
+
       // Create short record in database
       await supabase.from("shorts").insert({
         job_id: jobId,
@@ -306,6 +359,7 @@ export async function processVideoJob(
         height: 1920,
         file_size: shortBuffer.length,
         has_subtitles: true,
+        thumbnail_path: thumbnailStoragePath,
       });
 
       // Clean up segment files
@@ -351,9 +405,38 @@ export async function processVideoJob(
       steps[failedAtStep as StepName] = "error";
     }
 
+    // Create a clean user-facing error message (hide raw FFmpeg/system details)
+    const rawMsg = error.message || "Unknown error";
+    let userMessage = rawMsg;
+
+    if (rawMsg.includes("FFmpeg failed")) {
+      // Map common FFmpeg errors to friendly messages
+      if (rawMsg.includes("Unable to open") && rawMsg.includes(".srt")) {
+        userMessage = "Subtitle file could not be loaded. Please retry.";
+      } else if (rawMsg.includes("No such file")) {
+        userMessage =
+          "A temporary file was lost during processing. Please retry.";
+      } else if (rawMsg.includes("Invalid data")) {
+        userMessage =
+          "The video file appears to be corrupted. Please re-upload.";
+      } else {
+        userMessage =
+          "Video processing failed. Please retry or try a different video.";
+      }
+      console.error(`[Job ${jobId}] Full FFmpeg error:`, rawMsg);
+    } else if (
+      rawMsg.includes("Mistral AI error") ||
+      rawMsg.includes("Failed to parse Mistral")
+    ) {
+      userMessage = "AI segment detection failed. Please retry.";
+      console.error(`[Job ${jobId}] Mistral error:`, rawMsg);
+    } else if (rawMsg.includes("Deepgram") || rawMsg.includes("transcrib")) {
+      userMessage = "Speech transcription failed. Please retry.";
+    }
+
     // Update job as failed, recording the step it failed at
     await updateJobStatus(jobId, "failed", 0, {
-      error_message: error.message || "Unknown error",
+      error_message: userMessage,
       failed_at_step: failedAtStep,
       steps,
     });

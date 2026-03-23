@@ -30,11 +30,18 @@ function getStatusColor(status: string) {
         <h1 class="text-3xl font-bold">Dashboard</h1>
         <p class="text-muted-foreground">Manage your videos and shorts</p>
       </div>
-      <NuxtLink to="/dashboard/upload">
-        <Button size="lg">
-          📤 Upload Video
-        </Button>
-      </NuxtLink>
+      <div class="space-x-2">
+        <NuxtLink to="/dashboard/settings">
+          <Button variant="outline">
+            ⚙️ Settings
+          </Button>
+        </NuxtLink>
+        <NuxtLink to="/dashboard/upload">
+          <Button >
+            📤 Upload Video
+          </Button>
+        </NuxtLink>
+      </div>
     </div>
 
     <!-- Stats -->
@@ -75,6 +82,10 @@ function getStatusColor(status: string) {
         <NuxtLink to="/dashboard/upload" class="mt-4 inline-block">
           <Button>Upload Video</Button>
         </NuxtLink>
+        <NuxtLink to="/dashboard/settings" class="mt-4 inline-block">
+          <Button>Settings</Button>
+        </NuxtLink>
+
       </div>
 
       <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
