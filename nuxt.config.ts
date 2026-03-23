@@ -4,7 +4,18 @@ export default defineNuxtConfig({
     compatibilityVersion: 4,
   },
 
-  modules: ["@nuxtjs/supabase", "@nuxtjs/tailwindcss", "@vite-pwa/nuxt"],
+  modules: [
+    "@nuxtjs/supabase",
+    "@nuxtjs/tailwindcss",
+    "@vite-pwa/nuxt",
+    "shadcn-nuxt",
+  ],
+
+  // shadcn-nuxt config
+  shadcn: {
+    prefix: "",
+    componentDir: "./app/components/ui",
+  },
 
   // Runtime config - env variables
   runtimeConfig: {
@@ -72,8 +83,8 @@ export default defineNuxtConfig({
       ],
     },
     workbox: {
-      navigateFallback: "/offline",
-      globPatterns: ["**/*.{js,css,html,png,svg,ico}"],
+      navigateFallback: null,
+      cleanupOutdatedCaches: true,
       runtimeCaching: [
         {
           urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
@@ -92,74 +103,12 @@ export default defineNuxtConfig({
       installPrompt: true,
     },
     devOptions: {
-      enabled: true,
-      type: "module",
+      enabled: false,
     },
   },
 
   // Tailwind CSS config
   tailwindcss: {
-    config: {
-      darkMode: "class",
-      theme: {
-        extend: {
-          colors: {
-            border: "hsl(var(--border))",
-            input: "hsl(var(--input))",
-            ring: "hsl(var(--ring))",
-            background: "hsl(var(--background))",
-            foreground: "hsl(var(--foreground))",
-            primary: {
-              DEFAULT: "hsl(var(--primary))",
-              foreground: "hsl(var(--primary-foreground))",
-            },
-            secondary: {
-              DEFAULT: "hsl(var(--secondary))",
-              foreground: "hsl(var(--secondary-foreground))",
-            },
-            destructive: {
-              DEFAULT: "hsl(var(--destructive))",
-              foreground: "hsl(var(--destructive-foreground))",
-            },
-            muted: {
-              DEFAULT: "hsl(var(--muted))",
-              foreground: "hsl(var(--muted-foreground))",
-            },
-            accent: {
-              DEFAULT: "hsl(var(--accent))",
-              foreground: "hsl(var(--accent-foreground))",
-            },
-            popover: {
-              DEFAULT: "hsl(var(--popover))",
-              foreground: "hsl(var(--popover-foreground))",
-            },
-            card: {
-              DEFAULT: "hsl(var(--card))",
-              foreground: "hsl(var(--card-foreground))",
-            },
-          },
-          borderRadius: {
-            lg: "var(--radius)",
-            md: "calc(var(--radius) - 2px)",
-            sm: "calc(var(--radius) - 4px)",
-          },
-          keyframes: {
-            "accordion-down": {
-              from: { height: "0" },
-              to: { height: "var(--radix-accordion-content-height)" },
-            },
-            "accordion-up": {
-              from: { height: "var(--radix-accordion-content-height)" },
-              to: { height: "0" },
-            },
-          },
-          animation: {
-            "accordion-down": "accordion-down 0.2s ease-out",
-            "accordion-up": "accordion-up 0.2s ease-out",
-          },
-        },
-      },
-    },
     cssPath: "~/assets/css/main.css",
   },
 
