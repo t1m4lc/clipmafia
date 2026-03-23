@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event);
-  const { videoId, durationOption = 60 } = body;
+  const { videoId, durationOption = 60, subtitleSettings } = body;
 
   if (!videoId) {
     throw createError({ statusCode: 400, message: "videoId is required" });
@@ -60,7 +60,39 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Create job record
+  // Create job record — if a previous job failed, carry over its transcript/segments
+  // so we don't redo expensive API calls (Deepgram, Mistral)
+  let carryOverData: Record<string, any> = {};
+
+  const { data: previousJob } = await supabase
+    .from("jobs")
+    .select("*")
+    .eq("video_id", videoId)
+    .eq("user_id", user.id)
+    .eq("status", "failed")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (previousJob) {
+    if ((previousJob as any).transcript) {
+      carryOverData.transcript = (previousJob as any).transcript;
+    }
+    // Only carry over segments if the failure was AFTER segment detection
+    const failedStep = (previousJob as any).failed_at_step;
+    const postSegmentSteps = [
+      "processing_video",
+      "burning_subtitles",
+      "uploading",
+    ];
+    if (
+      (previousJob as any).segments &&
+      postSegmentSteps.includes(failedStep)
+    ) {
+      carryOverData.segments = (previousJob as any).segments;
+    }
+  }
+
   const { data: job, error: jobError } = await supabase
     .from("jobs")
     .insert({
@@ -69,7 +101,8 @@ export default defineEventHandler(async (event) => {
       status: "queued",
       duration_option: durationOption,
       progress: 0,
-    })
+      ...carryOverData,
+    } as any)
     .select()
     .single();
 
@@ -83,12 +116,30 @@ export default defineEventHandler(async (event) => {
     .update({ status: "processing" })
     .eq("id", videoId);
 
+  // Always increment the monthly counter (bypass only skips the limit *check*, not the counting)
+  const { data: profileData } = await supabase
+    .from("profiles")
+    .select("videos_processed_this_month")
+    .eq("id", user.id)
+    .single();
+
+  if (profileData) {
+    await supabase
+      .from("profiles")
+      .update({
+        videos_processed_this_month:
+          profileData.videos_processed_this_month + 1,
+      })
+      .eq("id", user.id);
+  }
+
   // Add to processing queue
   jobQueue.add({
     jobId: job.id,
     videoId,
     userId: user.id,
     durationOption,
+    subtitleSettings,
   });
 
   return {

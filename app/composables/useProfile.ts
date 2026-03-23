@@ -3,6 +3,19 @@ import type { Database } from "~/types/database";
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 
 /**
+ * Upload limits per subscription plan.
+ * maxFileSizeMB : limit enforced at selection time
+ * maxDurationMinutes : informational label shown in the UI
+ *
+ * NOTE: Free plan is limited to 50 MB by Supabase Storage default
+ */
+export const PLAN_LIMITS = {
+  free: { maxFileSizeMB: 50, maxDurationMinutes: 2 },
+  basic: { maxFileSizeMB: 750, maxDurationMinutes: 30 },
+  pro: { maxFileSizeMB: 2000, maxDurationMinutes: 60 },
+} as const;
+
+/**
  * Composable for user profile management.
  */
 export function useProfile() {
@@ -66,11 +79,57 @@ export function useProfile() {
     );
   }
 
+  /**
+   * Get max upload file size in bytes for the current user's plan.
+   * - bypass  → Infinity (no limit)
+   * - free    → 250 MB  (≈ 10 min @ 1080p)
+   * - basic   → 750 MB  (≈ 30 min @ 1080p)
+   * - pro     → 2 000 MB (≈ 1 h  @ 1080p)
+   * Falls back to free limit when plan is inactive / unknown.
+   */
+  function getUploadLimit(): number {
+    const config = useRuntimeConfig();
+    if (config.public.devBypassStripe) return Infinity;
+    if (!profile.value) return PLAN_LIMITS.free.maxFileSizeMB * 1024 * 1024;
+
+    const isActive = ["active", "trialing"].includes(
+      profile.value.subscription_status,
+    );
+    const plan = isActive ? profile.value.subscription_plan : "free";
+    const limitMB =
+      PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS]?.maxFileSizeMB ??
+      PLAN_LIMITS.free.maxFileSizeMB;
+    return limitMB * 1024 * 1024;
+  }
+
+  /**
+   * Get upload limit info (MB + duration label) for display in the UI.
+   */
+  function getUploadLimitInfo(): { mb: number; minutes: number } | null {
+    const config = useRuntimeConfig();
+    if (config.public.devBypassStripe) return null; // null = unlimited
+
+    const toInfo = (p: keyof typeof PLAN_LIMITS) => ({
+      mb: PLAN_LIMITS[p].maxFileSizeMB,
+      minutes: PLAN_LIMITS[p].maxDurationMinutes,
+    });
+
+    if (!profile.value) return toInfo("free");
+
+    const isActive = ["active", "trialing"].includes(
+      profile.value.subscription_status,
+    );
+    const plan = isActive ? profile.value.subscription_plan : "free";
+    return toInfo((plan as keyof typeof PLAN_LIMITS) ?? "free");
+  }
+
   return {
     profile,
     loading,
     fetchProfile,
     canProcessVideo,
     remainingQuota,
+    getUploadLimit,
+    getUploadLimitInfo,
   };
 }

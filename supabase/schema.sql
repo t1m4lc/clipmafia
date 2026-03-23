@@ -41,6 +41,7 @@ CREATE TABLE public.videos (
   file_size BIGINT,
   mime_type TEXT,
   thumbnail_path TEXT,
+  transcript JSONB,
   status TEXT DEFAULT 'uploaded' CHECK (status IN ('uploaded', 'processing', 'completed', 'failed')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -57,6 +58,9 @@ CREATE TABLE public.jobs (
   status TEXT DEFAULT 'queued' CHECK (status IN ('queued', 'extracting_audio', 'transcribing', 'detecting_segments', 'processing_video', 'burning_subtitles', 'uploading', 'completed', 'failed')),
   progress INTEGER DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
   error_message TEXT,
+  failed_at_step TEXT,
+  steps JSONB DEFAULT '{}',
+  subtitle_settings JSONB,
   duration_option INTEGER DEFAULT 60 CHECK (duration_option IN (15, 30, 60)),
   transcript JSONB,
   segments JSONB,

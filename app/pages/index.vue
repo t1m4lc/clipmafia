@@ -4,6 +4,15 @@ definePageMeta({
 })
 
 const user = useSupabaseUser()
+
+// Redirect authenticated users away from the landing page
+watch(
+  user,
+  (u) => {
+    if (u) navigateTo('/dashboard')
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -17,11 +26,11 @@ const user = useSupabaseUser()
           <span class="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">ClipMafia</span>
         </div>
         <div class="flex items-center gap-4">
-          <NuxtLink v-if="!user" to="/login">
+          <NuxtLink to="/login">
             <Button variant="ghost">Sign in</Button>
           </NuxtLink>
-          <NuxtLink :to="user ? '/dashboard' : '/register'">
-            <Button>{{ user ? 'Dashboard' : 'Get Started' }}</Button>
+          <NuxtLink to="/register">
+            <Button>Get Started</Button>
           </NuxtLink>
         </div>
       </nav>
@@ -47,7 +56,7 @@ const user = useSupabaseUser()
           </p>
 
           <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <NuxtLink :to="user ? '/dashboard/upload' : '/register'">
+            <NuxtLink to="/register">
               <Button size="lg" class="text-lg px-8 py-6">
                 🚀 Upload Your First Video
               </Button>

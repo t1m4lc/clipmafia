@@ -36,6 +36,8 @@ export default defineNuxtConfig({
       stripePriceIdPro: process.env.STRIPE_PRICE_ID_PRO || "",
       // Exposed to client so the UI can also bypass quota warnings
       devBypassStripe: process.env.DEV_BYPASS_STRIPE === "true",
+      // Dev mode: show segment review panel & debug tools
+      devMode: process.env.DEV_MODE === "true",
     },
   },
 

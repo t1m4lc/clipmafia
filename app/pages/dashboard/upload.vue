@@ -5,7 +5,11 @@ definePageMeta({
 })
 
 const { uploadVideo } = useVideos()
-const { profile, canProcessVideo, fetchProfile } = useProfile()
+const { profile, canProcessVideo, fetchProfile, getUploadLimit, getUploadLimitInfo } = useProfile()
+
+// Computed limits for the current user plan
+const uploadLimitInfo = computed(() => getUploadLimitInfo())
+const uploadLimitBytes = computed(() => getUploadLimit())
 
 const uploading = ref(false)
 const dragOver = ref(false)
@@ -50,9 +54,17 @@ function selectFile(file: File) {
     return
   }
 
-  // Validate file size (max 500MB)
-  if (file.size > 500 * 1024 * 1024) {
-    errorMessage.value = 'File size must be less than 500MB'
+  // Validate file size based on subscription plan
+  const limitBytes = uploadLimitBytes.value
+  if (limitBytes !== Infinity && file.size > limitBytes) {
+    const info = uploadLimitInfo.value
+    const limitLabel = info ? `${info.mb} MB (≈ ${info.minutes} min)` : '?'
+    const plan = profile.value?.subscription_plan ?? 'free'
+    if (plan === 'free') {
+      errorMessage.value = `File exceeds your free plan limit of ${limitLabel}. Upgrade to upload longer videos.`
+    } else {
+      errorMessage.value = `File exceeds your plan limit of ${limitLabel}.`
+    }
     return
   }
 
@@ -138,7 +150,14 @@ function formatFileSize(bytes: number): string {
             <div class="text-5xl">📤</div>
             <div>
               <p class="text-lg font-medium">Drop your video here or click to browse</p>
-              <p class="text-sm text-muted-foreground mt-1">MP4, MOV, AVI, WebM, MKV • Max 500MB</p>
+              <p class="text-sm text-muted-foreground mt-1">
+                MP4, MOV, AVI, WebM, MKV •
+                <span v-if="uploadLimitInfo">
+                  Max {{ uploadLimitInfo.mb }} MB (≈ {{ uploadLimitInfo.minutes }} min)
+                  <NuxtLink v-if="profile?.subscription_plan === 'free'" to="/pricing" class="underline ml-1">Upgrade</NuxtLink>
+                </span>
+                <span v-else>Unlimited</span>
+              </p>
             </div>
           </div>
         </div>
