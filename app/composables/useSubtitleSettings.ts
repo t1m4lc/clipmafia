@@ -1,18 +1,18 @@
 import type { SubtitleSettings } from "~/types/database";
+import { DEFAULT_SUBTITLE_STYLE } from "~/lib/overlayConfig";
 
 const STORAGE_KEY = "clipmafia-subtitle-settings";
 
 export const DEFAULT_SUBTITLE_SETTINGS: SubtitleSettings = {
-  fontName: "Courier New",
-  fontSize: 16,
-  primaryColor: "#FFFFFF",
-  outlineColor: "#000000",
-  bold: true,
-  outline: 2,
-  shadow: 1,
-  marginV: 5,
-  alignment: 2,
-  animated: false,
+  fontName: DEFAULT_SUBTITLE_STYLE.fontName,
+  fontSize: DEFAULT_SUBTITLE_STYLE.fontSize,
+  primaryColor: DEFAULT_SUBTITLE_STYLE.primaryColor,
+  outlineColor: DEFAULT_SUBTITLE_STYLE.outlineColor,
+  bold: DEFAULT_SUBTITLE_STYLE.bold,
+  outline: DEFAULT_SUBTITLE_STYLE.outline,
+  shadow: DEFAULT_SUBTITLE_STYLE.shadow,
+  marginV: DEFAULT_SUBTITLE_STYLE.marginV,
+  alignment: DEFAULT_SUBTITLE_STYLE.alignment,
 };
 
 /**

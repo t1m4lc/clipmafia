@@ -419,6 +419,25 @@ export function useVideos() {
     URL.revokeObjectURL(url);
   }
 
+  /**
+   * Get a signed URL for the original uploaded video.
+   */
+  async function getOriginalVideoUrl(videoId: string): Promise<string> {
+    try {
+      const data = await $fetch(`/api/videos/${videoId}`);
+      const video = data as any;
+      if (!video?.storage_path) return "";
+      // Generate a signed URL via Supabase
+      const { data: signedData } = await supabase.storage
+        .from("videos")
+        .createSignedUrl(video.storage_path, 3600);
+      return signedData?.signedUrl || "";
+    } catch (e) {
+      console.error("Failed to get original video URL:", e);
+      return "";
+    }
+  }
+
   return {
     videos,
     currentVideo,
@@ -434,6 +453,7 @@ export function useVideos() {
     pollJobStatus,
     fetchShorts,
     getDownloadUrl,
+    getOriginalVideoUrl,
     deleteVideo,
     deleteShort,
     hasTranscript,

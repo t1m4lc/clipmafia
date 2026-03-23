@@ -23,6 +23,7 @@ const {
   fetchShorts,
   pollJobStatus,
   getDownloadUrl,
+  getOriginalVideoUrl,
   deleteVideo,
   deleteShort,
   hasTranscript,
@@ -53,7 +54,7 @@ async function handleDelete() {
 
 const { canProcessVideo } = useProfile()
 
-const selectedDuration = ref<DurationOption>(15)
+const selectedDuration = ref<DurationOption>(30)
 const generating = ref(false)
 const errorMessage = ref('')
 const batchDownloading = ref(false)
@@ -62,16 +63,37 @@ const thumbnailUrls = ref<Record<string, string>>({})
 
 const devSelectedSegments = ref<Segment[]>([])
 
-const durationOptions: { label: string; value: DurationOption }[] = [
-  { label: '15 seconds', value: 15 },
-  { label: '30 seconds', value: 30 },
-  { label: '60 seconds', value: 60 },
+const durationOptions: { label: string; value: DurationOption; desc: string }[] = [
+  { label: '≤ 15s', value: 15, desc: 'Ultra-short' },
+  { label: '≤ 30s', value: 30, desc: 'Short' },
+  { label: '≤ 60s', value: 60, desc: 'Standard' },
 ]
 
 const previewUrl = ref('')
 const previewTitle = ref('')
 const showPreview = ref(false)
 const activeMenuShortId = ref<string | null>(null)
+
+// Original video player state
+const showOriginalPlayer = ref(false)
+const originalVideoUrl = ref('')
+const loadingOriginalVideo = ref(false)
+
+async function playOriginalVideo() {
+  if (!currentVideo.value) return
+  loadingOriginalVideo.value = true
+  try {
+    const url = await getOriginalVideoUrl(currentVideo.value.id)
+    if (url) {
+      originalVideoUrl.value = url
+      showOriginalPlayer.value = true
+    }
+  } catch (e: any) {
+    errorMessage.value = 'Failed to load original video'
+  } finally {
+    loadingOriginalVideo.value = false
+  }
+}
 
 function toggleMenu(shortId: string) {
   activeMenuShortId.value = activeMenuShortId.value === shortId ? null : shortId
@@ -182,14 +204,38 @@ async function handleDownload(shortId: string, title: string) {
 async function handleBatchDownload() {
   if (shorts.value.length === 0) return
   batchDownloading.value = true
+  errorMessage.value = ''
   try {
+    const { zipSync } = await import('fflate')
+    const videoTitle = currentVideo.value?.title || 'shorts'
+    const files: Record<string, Uint8Array> = {}
+
     for (const short of shorts.value) {
       const url = await getDownloadUrl(short.id)
       if (!url) continue
-      await downloadAsBlob(url, short.title + '.mp4')
-      // Delay between downloads to avoid browser throttling
-      await new Promise(r => setTimeout(r, 800))
+      const response = await fetch(url)
+      const buffer = await response.arrayBuffer()
+      // Sanitize filename — remove characters not safe in ZIP/OS paths
+      const safeName = short.title.replace(/[/\\?%*:|"<>]/g, '-') + '.mp4'
+      files[safeName] = new Uint8Array(buffer)
     }
+
+    if (Object.keys(files).length === 0) {
+      errorMessage.value = 'No shorts available to download'
+      return
+    }
+
+    // level: 0 = store only (no compression — videos are already compressed)
+    const zipped = zipSync(files, { level: 0 })
+    const blob = new Blob([zipped.buffer as ArrayBuffer], { type: 'application/zip' })
+    const blobUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.download = `${videoTitle}_shorts.zip`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000)
   } catch (e: any) {
     errorMessage.value = 'Batch download failed: ' + (e.message || 'Unknown error')
   } finally {
@@ -337,7 +383,7 @@ const subtitlePreviewStyle = computed(() => {
   const s = subtitleSettings.value
   return {
     fontFamily: s.fontName,
-    fontSize: `${Math.max(10, Math.min(s.fontSize, 24))}px`,
+    fontSize: `${Math.max(8, Math.min(s.fontSize, 32))}px`,
     fontWeight: s.bold ? '700' : '400',
     color: s.primaryColor,
     textShadow: `
@@ -366,8 +412,23 @@ const subtitlePreviewStyle = computed(() => {
     <template v-else-if="currentVideo">
       <!-- Video Header — compact -->
       <div class="flex flex-col sm:flex-row gap-4 items-start">
-        <div class="aspect-video w-full sm:w-56 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-          <span class="text-3xl">&#x1F3AC;</span>
+        <div
+          class="aspect-video w-full sm:w-56 rounded-lg bg-muted flex items-center justify-center flex-shrink-0 relative cursor-pointer group overflow-hidden"
+          @click="playOriginalVideo"
+        >
+          <span class="text-3xl group-hover:scale-110 transition-transform">&#x1F3AC;</span>
+          <!-- Play overlay -->
+          <div class="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div class="h-12 w-12 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+              <Play class="size-5 text-black ml-0.5" />
+            </div>
+          </div>
+          <span v-if="loadingOriginalVideo" class="absolute inset-0 flex items-center justify-center bg-black/50">
+            <svg class="size-6 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
+              <path class="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+          </span>
         </div>
         <div class="flex-1 space-y-2 min-w-0">
           <div class="flex flex-wrap items-start justify-between gap-2">
@@ -396,7 +457,6 @@ const subtitlePreviewStyle = computed(() => {
           <div>
             <h2 class="text-2xl font-bold flex items-center gap-2">
               ✨ Generated Shorts
-              <Badge class="text-sm">{{ shorts.length }}</Badge>
             </h2>
           </div>
           <div class="flex items-center gap-2">
@@ -448,16 +508,7 @@ const subtitlePreviewStyle = computed(() => {
                   </div>
                 </template>
 
-                <!-- Subtitle preview with actual styles -->
-                <div class="relative z-[5] mb-4 px-3 w-full flex justify-center" :style="{ marginBottom: Math.max(subtitleSettings.marginV / 4, 8) + 'px' }">
-                  <div
-                    :style="subtitlePreviewStyle"
-                    :class="{ 'animate-subtitle-pop': subtitleSettings.animated }"
-                    class="max-w-[90%] text-center"
-                  >
-                    {{ short.title.length > 40 ? short.title.slice(0, 40) + '...' : short.title }}
-                  </div>
-                </div>
+
 
                 <!-- Viral score badge -->
                 <div v-if="short.score" class="absolute top-3 right-3 z-20">
@@ -560,6 +611,28 @@ const subtitlePreviewStyle = computed(() => {
         </div>
       </Dialog>
 
+      <!-- Original Video Player Modal — 16:9 landscape -->
+      <Dialog :open="showOriginalPlayer" @update:open="(v: boolean) => { showOriginalPlayer = v; if(!v) originalVideoUrl = '' }">
+        <div class="space-y-4">
+          <h2 class="text-lg font-semibold">{{ currentVideo?.title }} — Original</h2>
+          <div class="flex justify-center">
+            <div class="relative bg-black rounded-xl overflow-hidden shadow-2xl w-full" style="max-width: 720px;">
+              <video
+                v-if="originalVideoUrl"
+                :src="originalVideoUrl"
+                controls
+                autoplay
+                playsinline
+                class="w-full aspect-video object-contain"
+              />
+            </div>
+          </div>
+          <div class="flex justify-end">
+            <Button variant="ghost" @click="showOriginalPlayer = false">Close</Button>
+          </div>
+        </div>
+      </Dialog>
+
       <!-- ════════════════════════════════════════════════ -->
       <!-- Processing Status (shown only during processing) -->
       <!-- ════════════════════════════════════════════════ -->
@@ -620,6 +693,11 @@ const subtitlePreviewStyle = computed(() => {
             </div>
           </div>
         </CardContent>
+                <!-- 'Come back later' hint -->
+        <div class="mx-6 pb-2 mt-2 flex items-start gap-2 rounded-lg bg-muted/60 border border-border px-3 py-2.5 text-sm text-muted-foreground">
+          <span class="text-base leading-none mt-0.5">💡</span>
+          <span>You can <strong class="text-foreground">close this page and come back later</strong> — processing continues in the background and your shorts will be ready here when done.</span>
+        </div>
       </Card>
 
       <!-- ════════════════════════════════════════════════ -->
@@ -643,10 +721,11 @@ const subtitlePreviewStyle = computed(() => {
                 :class="selectedDuration === option.value ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/50'"
                 @click="selectedDuration = option.value"
               >
-                <div class="text-base sm:text-lg font-bold">{{ option.value }}s</div>
-                <div class="hidden sm:block text-xs text-muted-foreground">{{ option.label }}</div>
+                <div class="text-base sm:text-lg font-bold">{{ option.label }}</div>
+                <div class="hidden sm:block text-xs text-muted-foreground">{{ option.desc }}</div>
               </button>
             </div>
+            <p class="text-xs text-muted-foreground mt-1">Generated shorts will never exceed the selected duration.</p>
           </div>
 
           <!-- Current subtitle style indicator -->
@@ -700,14 +779,26 @@ const subtitlePreviewStyle = computed(() => {
       </Card>
 
       <!-- ════════════════════════════════════════════════ -->
-      <!-- Secondary: Transcript Downloads (collapsed)     -->
+      <!-- Transcript Downloads — visible as soon as audio  -->
+      <!-- is transcribed, even while job is still running  -->
       <!-- ════════════════════════════════════════════════ -->
       <Card v-if="hasTranscript()" class="border-dashed">
         <CardHeader>
           <CardTitle class="flex items-center gap-2 text-base">
             📝 Subtitles &amp; Transcript
             <Badge variant="secondary" class="text-xs">Available</Badge>
+            <!-- Show a subtle 'ready during processing' badge -->
+            <Badge
+              v-if="currentJob && !['completed', 'failed'].includes(currentJob.status)"
+              variant="outline"
+              class="text-xs text-green-600 border-green-500"
+            >
+              ✅ Transcription done
+            </Badge>
           </CardTitle>
+          <CardDescription v-if="currentJob && !['completed', 'failed'].includes(currentJob.status)">
+            Audio has been transcribed — you can already download the subtitles while the video finishes processing.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div class="flex flex-wrap gap-2">
@@ -729,14 +820,3 @@ const subtitlePreviewStyle = computed(() => {
     </template>
   </div>
 </template>
-
-<style scoped>
-@keyframes subtitle-pop {
-  0% { transform: scale(0.7); opacity: 0; }
-  50% { transform: scale(1.05); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
-}
-.animate-subtitle-pop {
-  animation: subtitle-pop 0.4s ease-out;
-}
-</style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, nextTick, watch } from 'vue'
+import { computed } from 'vue'
 import type { SubtitleSettings } from '~/types/database'
+import { SUBTITLE_RANGES, PHONE_PREVIEW } from '~/lib/overlayConfig'
 
 const props = defineProps<{
   modelValue: SubtitleSettings
@@ -26,8 +27,8 @@ const fontOptions = [
 ]
 
 const positionOptions = [
-  { label: 'Bottom', alignment: 2, marginV: 60 },
-  { label: 'Top', alignment: 8, marginV: 40 },
+  { label: 'Bottom', alignment: 2, marginV: 12 },
+  { label: 'Top', alignment: 8, marginV: 12 },
   { label: 'Middle', alignment: 5, marginV: 0 },
 ]
 
@@ -42,14 +43,15 @@ function setPosition(option: typeof positionOptions[number]) {
 
 const previewSample = computed(() => props.sampleText || 'Your subtitle text\nwill appear here')
 
-// ─── Phone mockup scale math (iPhone 14: 390×844 logical px) ─────────────────
-const PHONE_W = 390
-const PHONE_H = 844
-const DISPLAY_H = 420          // rendered CSS px
-const phoneScale = DISPLAY_H / PHONE_H   // ≈ 0.498 (~50%)
-const displayW = Math.round(PHONE_W * phoneScale) // ≈ 194
+// ─── Phone mockup scale math ─────────────────────────────────────────────────
+// fontSize and marginV are stored as "phone screen pixels" (390px-wide reference).
+// We render the mockup at phone dimensions and CSS-scale down to DISPLAY_H.
+// This gives accurate 1:1 preview — what you set is what you see on a real phone.
+const DISPLAY_H = 640
+const phoneScale = DISPLAY_H / PHONE_PREVIEW.height   // 640/844 ≈ 0.758
+const displayW = Math.round(PHONE_PREVIEW.width * phoneScale) // ≈ 296
 
-// ─── Subtitle text style at full phone logical resolution ─────────────────────
+// ─── Subtitle text style in phone screen-pixel space ─────────────────────────
 const phoneSubtitleStyle = computed(() => {
   const s = settings.value
   return {
@@ -64,62 +66,31 @@ const phoneSubtitleStyle = computed(() => {
        ${s.outline}px  ${s.outline}px 0 ${s.outlineColor}
     `,
     textAlign: 'center' as const,
-    padding: '8px 20px',
-    lineHeight: '1.5',
+    padding: '4px 12px',
+    lineHeight: '1.4',
     maxWidth: '100%',
     whiteSpace: 'pre-line' as const,
   }
 })
 
-// marginV is in ASS units measured against 1080-tall video → remap to 844 phone height
+// Position in the phone-sized container (marginV is in phone screen pixels)
 const phoneSubtitlePositionStyle = computed(() => {
   const s = settings.value
-  const mappedMargin = Math.round(s.marginV * (PHONE_H / 1080))
   const isBottom = s.alignment <= 3
   const isTop = s.alignment >= 7
   const base = { position: 'absolute' as const, left: '0', right: '0', display: 'flex', justifyContent: 'center', padding: '0 24px' }
-  if (isBottom) return { ...base, bottom: `${Math.max(mappedMargin + 34, 44)}px` }
-  if (isTop)    return { ...base, top: `${Math.max(mappedMargin + 54, 62)}px` }
+  if (isBottom) return { ...base, bottom: `${s.marginV + 20}px` }
+  if (isTop)    return { ...base, top: `${s.marginV + 44}px` }
   return { ...base, top: '50%', transform: 'translateY(-50%)' }
 })
-
-// ─── Animation control ────────────────────────────────────────────────────────
-const animationKey = ref(0)
-const isAnimatingPreview = ref(false)
-let animTimer: ReturnType<typeof setTimeout> | null = null
-
-function playAnimation() {
-  if (animTimer) clearTimeout(animTimer)
-  isAnimatingPreview.value = false
-  nextTick(() => {
-    animationKey.value++
-    isAnimatingPreview.value = true
-    animTimer = setTimeout(() => { isAnimatingPreview.value = false }, 700)
-  })
-}
-
-// Auto-play preview when animation is toggled on
-watch(() => settings.value.animated, (val) => {
-  if (val) playAnimation()
-  else animationKey.value++
-})
-
-// Reset animation key on any style change
-watch(
-  () => [
-    settings.value.fontName, settings.value.fontSize, settings.value.primaryColor,
-    settings.value.outlineColor, settings.value.bold, settings.value.alignment, settings.value.marginV,
-  ],
-  () => { animationKey.value++ },
-)
 </script>
 
 <template>
   <!-- 2-column on desktop: settings left · phone mockup right (sticky) -->
   <div class="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
 
-    <!-- ───────────────────────────── LEFT: Settings ──────────────────────── -->
-    <div class="flex-1 min-w-0 space-y-5">
+    <!-- ───────────────────────────── LEFT: Settings (2/3) ────────────────── -->
+    <div class="w-full lg:w-2/3 min-w-0 space-y-5">
       <div class="grid gap-4 sm:grid-cols-2">
         <!-- Font Family -->
         <div class="space-y-2">
@@ -206,7 +177,9 @@ watch(
         <input
           type="range"
           :value="settings.marginV"
-          min="0" max="200" step="5"
+          :min="SUBTITLE_RANGES.marginV.min"
+          :max="SUBTITLE_RANGES.marginV.max"
+          :step="SUBTITLE_RANGES.marginV.step"
           class="w-full accent-primary"
           @input="update('marginV', Number(($event.target as HTMLInputElement).value))"
         />
@@ -224,33 +197,16 @@ watch(
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="settings.bold ? 'translate-x-6' : 'translate-x-1'" />
           </button>
         </div>
-
-        <!-- Animation toggle -->
-        <div class="flex items-center justify-between rounded-lg border p-3">
-          <Label class="text-sm font-medium">Text Animation</Label>
-          <button
-            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer"
-            :class="settings.animated ? 'bg-primary' : 'bg-muted'"
-            @click="update('animated', !settings.animated)"
-          >
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="settings.animated ? 'translate-x-6' : 'translate-x-1'" />
-          </button>
-        </div>
       </div>
     </div>
 
-    <!-- ───────────────────────── RIGHT: Phone mockup (sticky) ────────────── -->
-    <div class="flex-shrink-0 flex flex-col items-center gap-3 lg:sticky lg:top-4">
+    <!-- ───────────────────────── RIGHT: Phone mockup (1/3, sticky) ──────── -->
+    <div class="w-full lg:w-1/3 flex flex-col items-center gap-3 lg:sticky lg:top-4">
 
-      <!-- Header: label + play button -->
+      <!-- Header -->
       <div class="flex w-full items-center justify-between" :style="{ width: displayW + 'px' }">
         <span class="text-sm font-medium">Live Preview</span>
-        <button
-          class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border bg-primary/5 border-primary/30 hover:bg-primary/15 text-primary font-medium transition-colors cursor-pointer select-none"
-          @click="playAnimation"
-        >
-          &#9654; Play
-        </button>
+        <span class="text-xs text-muted-foreground">1080×1920</span>
       </div>
 
       <!-- Outer wrapper: reserves the final CSS footprint -->
@@ -258,12 +214,14 @@ watch(
         class="relative"
         :style="{ width: displayW + 'px', height: DISPLAY_H + 'px' }"
       >
-        <!-- Full-size logical phone, scaled down via CSS transform -->
+        <!-- Phone-sized container, CSS-scaled to DISPLAY_H —
+             fontSize/marginV in the settings are phone screen pixels so they
+             render here at exactly the right visual proportion. -->
         <div
           class="absolute top-0 left-0 overflow-hidden"
           :style="{
-            width: PHONE_W + 'px',
-            height: PHONE_H + 'px',
+            width: PHONE_PREVIEW.width + 'px',
+            height: PHONE_PREVIEW.height + 'px',
             transform: `scale(${phoneScale})`,
             transformOrigin: 'top left',
             borderRadius: '44px',
@@ -281,38 +239,9 @@ watch(
             <div class="absolute bottom-24 left-1/2 -translate-x-1/2 opacity-[0.07]" style="width: 120px; height: 280px; background: linear-gradient(180deg, white 0%, rgba(255,255,255,0.4) 100%); border-radius: 60px 60px 30px 30px;" />
           </div>
 
-          <!-- Status bar -->
-          <div class="absolute top-0 left-0 right-0 z-20" style="height: 54px;">
-            <!-- Dynamic Island -->
-            <div class="absolute top-3 left-1/2 -translate-x-1/2 bg-black rounded-full z-30" style="width: 126px; height: 36px;" />
-            <!-- Time -->
-            <div class="absolute text-white font-semibold" style="bottom: 8px; left: 26px; font-size: 15px; letter-spacing: -0.3px;">9:41</div>
-            <!-- Signal / wifi / battery -->
-            <div class="absolute flex items-center gap-2" style="bottom: 10px; right: 24px;">
-              <div class="flex items-end gap-px" style="height: 13px;">
-                <div v-for="h in [5, 7, 9, 12]" :key="h" class="w-1 bg-white rounded-sm" :style="{ height: h + 'px' }" />
-              </div>
-              <svg width="16" height="12" viewBox="0 0 16 12" fill="white">
-                <circle cx="8" cy="10.5" r="1.2" />
-                <path d="M5.2 7.8A4 4 0 0 1 8 6.5a4 4 0 0 1 2.8 1.3" stroke="white" stroke-width="1.3" fill="none" stroke-linecap="round" />
-                <path d="M2.5 5A7.5 7.5 0 0 1 8 3a7.5 7.5 0 0 1 5.5 2" stroke="white" stroke-width="1.3" fill="none" stroke-linecap="round" />
-              </svg>
-              <div class="flex items-center">
-                <div class="rounded-sm" style="width: 24px; height: 12px; border: 1.5px solid rgba(255,255,255,0.8); padding: 2px;">
-                  <div class="bg-white rounded-sm h-full" style="width: 72%;" />
-                </div>
-                <div class="bg-white/50 rounded-r" style="width: 2px; height: 6px; margin-left: 1px;" />
-              </div>
-            </div>
-          </div>
-
-          <!-- Subtitle layer (positioned at full logical resolution) -->
+          <!-- Subtitle layer (positioned at full render resolution) -->
           <div :style="phoneSubtitlePositionStyle">
-            <div
-              :key="animationKey"
-              :style="phoneSubtitleStyle"
-              :class="{ 'animate-subtitle-pop': isAnimatingPreview || settings.animated }"
-            >
+            <div :style="phoneSubtitleStyle">
               {{ previewSample }}
             </div>
           </div>
@@ -324,20 +253,9 @@ watch(
 
       <!-- Scale info -->
       <p class="text-xs text-muted-foreground tabular-nums">
-        {{ Math.round(phoneScale * 100) }}% scale &middot; 390&times;844pt
+        {{ Math.round(phoneScale * 100) }}% scale &middot; {{ PHONE_PREVIEW.width }}&times;{{ PHONE_PREVIEW.height }}pt
       </p>
     </div>
 
   </div>
 </template>
-
-<style scoped>
-@keyframes subtitle-pop {
-  0%   { transform: scale(0.65) translateY(6px); opacity: 0; }
-  55%  { transform: scale(1.07) translateY(0);   opacity: 1; }
-  100% { transform: scale(1)    translateY(0);   opacity: 1; }
-}
-.animate-subtitle-pop {
-  animation: subtitle-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-}
-</style>

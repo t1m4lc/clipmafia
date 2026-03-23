@@ -280,7 +280,6 @@ export interface SubtitleSettings {
   shadow: number;
   marginV: number;
   alignment: number;
-  animated: boolean;
 }
 
 export type VideoStatus = "uploaded" | "processing" | "completed" | "failed";

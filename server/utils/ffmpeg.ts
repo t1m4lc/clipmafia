@@ -6,6 +6,16 @@ import { tmpdir } from "os";
 
 const execFileAsync = promisify(execFile);
 
+import {
+  DEFAULT_SUBTITLE_STYLE as OVERLAY_DEFAULTS,
+  WATERMARK_CONFIG,
+  getWatermarkAlignment,
+  RENDER,
+  PREVIEW_TO_ASS_SCALE,
+  type SubtitleStyleConfig,
+  type WatermarkConfig,
+} from "./overlayConfig";
+
 export interface SubtitleStyle {
   fontName?: string;
   fontSize?: number;
@@ -16,20 +26,18 @@ export interface SubtitleStyle {
   shadow?: number;
   marginV?: number;
   alignment?: number; // 2 = bottom center
-  animated?: boolean;
 }
 
 const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
-  fontName: "Arial",
-  fontSize: 22,
-  primaryColor: "#FFFFFF",
-  outlineColor: "#000000",
-  bold: true,
-  outline: 2,
-  shadow: 1,
-  marginV: 60,
-  alignment: 2,
-  animated: false,
+  fontName: OVERLAY_DEFAULTS.fontName,
+  fontSize: OVERLAY_DEFAULTS.fontSize,
+  primaryColor: OVERLAY_DEFAULTS.primaryColor,
+  outlineColor: OVERLAY_DEFAULTS.outlineColor,
+  bold: OVERLAY_DEFAULTS.bold,
+  outline: OVERLAY_DEFAULTS.outline,
+  shadow: OVERLAY_DEFAULTS.shadow,
+  marginV: OVERLAY_DEFAULTS.marginV,
+  alignment: OVERLAY_DEFAULTS.alignment,
 };
 
 /** Convert a hex color like "#RRGGBB" to ASS format "&H00BBGGRR" */
@@ -212,80 +220,40 @@ export async function processSegment(
   return outputPath;
 }
 
-/** Convert SRT timestamp "HH:MM:SS,mmm" to ASS timestamp "H:MM:SS.cc" */
-function srtTimeToAss(t: string): string {
-  const m = t.match(/(\d{2}):(\d{2}):(\d{2}),(\d{3})/);
-  if (!m || !m[1] || !m[2] || !m[3] || !m[4]) return "0:00:00.00";
-  const cs = Math.round(parseInt(m[4]) / 10);
-  return `${parseInt(m[1])}:${m[2]}:${m[3]}.${String(cs).padStart(2, "0")}`;
-}
-
-/**
- * Build a full ASS file with pop-in animation (fade + scale) from SRT content.
- * Used when subtitleSettings.animated === true.
- */
-function buildAssFile(srtContent: string, s: Required<SubtitleStyle>): string {
-  const primary = hexToAss(s.primaryColor);
-  const outline = hexToAss(s.outlineColor);
-
-  const header = [
-    "[Script Info]",
-    "ScriptType: v4.00+",
-    "PlayResX: 1080",
-    "PlayResY: 1920",
-    "WrapStyle: 1",
-    "",
-    "[V4+ Styles]",
-    "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-    `Style: Default,${s.fontName},${s.fontSize},${primary},&H000000FF,${outline},&H80000000,${s.bold ? -1 : 0},0,0,0,100,100,0,0,1,${s.outline},${s.shadow},${s.alignment},10,10,${s.marginV},1`,
-    "",
-    "[Events]",
-    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-  ].join("\n");
-
-  const dialogues: string[] = [];
-  for (const block of srtContent.trim().split(/\n\n+/)) {
-    const lines = block.trim().split("\n");
-    if (lines.length < 3 || !lines[1]) continue;
-    const match = lines[1].match(
-      /(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})/,
-    );
-    if (!match || !match[1] || !match[2]) continue;
-    const text = lines
-      .slice(2)
-      .join(" ")
-      .replace(/<[^>]+>/g, ""); // strip any HTML tags
-    const start = srtTimeToAss(match[1]);
-    const end = srtTimeToAss(match[2]);
-    // \fad(180,0)  → fade in 180 ms, no fade out
-    // \t(0,300,\fscx115\fscy115)\t(300,450,\fscx100\fscy100) → pop scale
-    dialogues.push(
-      `Dialogue: 0,${start},${end},Default,,0,0,0,,{\\fad(180,0)\\t(0,300,\\fscx115\\fscy115)\\t(300,450,\\fscx100\\fscy100)}${text}`,
-    );
-  }
-
-  return header + "\n" + dialogues.join("\n");
-}
-
 /**
  * Burn subtitles into a video using FFmpeg.
  * Uses SRT file with styled subtitles optimized for mobile viewing.
- * Accepts optional SubtitleStyle for user customization.
+ * All subtitles are static (no animations) for rendering reliability.
+ * Optionally burns a watermark for free-tier users.
  */
 export async function burnSubtitles(
   inputPath: string,
   srtContent: string,
   outputPath: string,
   style?: SubtitleStyle,
+  options?: { addWatermark?: boolean },
 ): Promise<string> {
+  // DEBUG: Log render step entry
+  console.log("[burnSubtitles] Entry:", {
+    inputPath,
+    outputPath,
+    srtContentLength: srtContent.length,
+    srtEmpty: !srtContent.trim(),
+    styleProvided: !!style,
+    fontSize: style?.fontSize,
+    addWatermark: options?.addWatermark,
+  });
+
   // If no subtitle content, just copy the video without subtitle overlay
   if (!srtContent.trim()) {
+    console.warn(
+      "[burnSubtitles] SRT content is empty — copying video without subtitles!",
+    );
     await runFfmpeg(["-y", "-i", inputPath, "-c", "copy", outputPath]);
     return outputPath;
   }
 
   // Defensive merge: filter out undefined/null values so they never override defaults
-  // (e.g. old localStorage settings that lack 'outline'/'shadow' keys)
   const filteredStyle: Partial<SubtitleStyle> = {};
   if (style) {
     for (const [k, v] of Object.entries(style)) {
@@ -311,38 +279,14 @@ export async function burnSubtitles(
 
   const baseFilename = `subs_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-  if (s.animated) {
-    // ── Animated path: generate a proper ASS file with \fad + pop-scale ──
-    // This is more reliable than embedding ASS override tags in SRT, and
-    // avoids the "undefined in force_style" issue entirely.
-    const assPath = join(dirname(inputPath), `${baseFilename}.ass`);
-    await writeFile(assPath, buildAssFile(srtContent, s), "utf-8");
-    try {
-      await runFfmpeg([
-        "-y",
-        "-i",
-        inputPath,
-        "-vf",
-        `ass='${escapePath(assPath)}'`,
-        "-c:v",
-        "libx264",
-        "-preset",
-        "medium",
-        "-crf",
-        "23",
-        "-c:a",
-        "copy",
-        "-movflags",
-        "+faststart",
-        outputPath,
-      ]);
-    } finally {
-      await unlink(assPath).catch(() => {});
-    }
-    return outputPath;
-  }
-
-  // ── Non-animated path: SRT + force_style ──
+  // ── Static path: SRT + force_style (no animations) ──
+  console.log("[burnSubtitles] Using STATIC path (SRT + force_style)", {
+    fontName: s.fontName,
+    fontSize: s.fontSize,
+    bold: s.bold,
+    alignment: s.alignment,
+    marginV: s.marginV,
+  });
   const srtPath = join(dirname(inputPath), `${baseFilename}.srt`);
   await writeFile(srtPath, srtContent, "utf-8");
 
@@ -353,21 +297,57 @@ export async function burnSubtitles(
     throw new Error(`Failed to write subtitle file to ${srtPath}`);
   }
 
+  // Scale fontSize and marginV from phone-screen-pixels → ASS coordinate pixels.
+  // Stored settings use "phone screen pixels" (390px-wide reference);
+  // ASS uses the video coordinate space (1080×1920).
+  const assFontSize = Math.round(s.fontSize * PREVIEW_TO_ASS_SCALE);
+  const assMarginV = Math.round(s.marginV * PREVIEW_TO_ASS_SCALE);
+
+  console.log("[burnSubtitles] ASS coords:", {
+    assFontSize,
+    assMarginV,
+    scale: PREVIEW_TO_ASS_SCALE,
+  });
+
   // Build ASS force_style string from the SubtitleStyle
   const subtitleStyle = [
     `FontName=${s.fontName}`,
-    `FontSize=${s.fontSize}`,
+    `FontSize=${assFontSize}`,
     `PrimaryColour=${hexToAss(s.primaryColor)}`,
     `OutlineColour=${hexToAss(s.outlineColor)}`,
     "BackColour=&H80000000",
     `Bold=${s.bold ? 1 : 0}`,
     `Outline=${s.outline}`,
     `Shadow=${s.shadow}`,
-    `MarginV=${s.marginV}`,
+    `MarginV=${assMarginV}`,
     `Alignment=${s.alignment}`,
   ].join(",");
 
-  const vfFilter = `subtitles='${escapePath(srtPath)}':force_style='${subtitleStyle}'`;
+  let vfFilter = `subtitles='${escapePath(srtPath)}':force_style='${subtitleStyle}'`;
+
+  // ── Watermark overlay for free users ──
+  if (options?.addWatermark) {
+    const wm = WATERMARK_CONFIG;
+    const wmAlignment = getWatermarkAlignment(s.alignment);
+    // Scale watermark values the same way
+    const wmFontSize = Math.round(wm.fontSize * PREVIEW_TO_ASS_SCALE);
+    const wmMarginV = Math.round(wm.marginV * PREVIEW_TO_ASS_SCALE);
+    // Use drawtext filter for the watermark
+    const wmFilter = [
+      `drawtext=text='${wm.text}'`,
+      `fontsize=${wmFontSize}`,
+      `fontcolor=white@${wm.opacity}`,
+      `borderw=${wm.outline}`,
+      `bordercolor=black@${wm.opacity}`,
+      `x=(w-text_w)/2`,
+      wmAlignment === 8 ? `y=${wmMarginV}` : `y=h-text_h-${wmMarginV}`,
+    ].join(":");
+    vfFilter = `${vfFilter},${wmFilter}`;
+    console.log("[burnSubtitles] Watermark filter added:", wmFilter);
+  }
+
+  // DEBUG: Log the exact FFmpeg filter for subtitle debugging
+  console.log("[burnSubtitles] FFmpeg vf filter:", vfFilter);
 
   try {
     await runFfmpeg([

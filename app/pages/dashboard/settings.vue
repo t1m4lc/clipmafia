@@ -69,7 +69,6 @@ function handleReset() {
           <p>Size: {{ DEFAULT_SUBTITLE_SETTINGS.fontSize }}px</p>
           <p>Bottom Margin: {{ DEFAULT_SUBTITLE_SETTINGS.marginV }}px</p>
           <p>Bold: {{ DEFAULT_SUBTITLE_SETTINGS.bold ? 'Yes' : 'No' }}</p>
-          <p>Animated: {{ DEFAULT_SUBTITLE_SETTINGS.animated ? 'Yes' : 'No' }}</p>
         </div>
       </CardContent>
     </Card>

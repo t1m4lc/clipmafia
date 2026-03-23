@@ -129,6 +129,25 @@ export async function processVideoJob(
     // Create temp directory for this job
     const tempDir = await ensureTempDir(jobId);
 
+    // ── Determine if watermark is needed (free users without active subscription) ──
+    const { data: profileData } = await supabase
+      .from("profiles")
+      .select("subscription_status, subscription_plan")
+      .eq("id", userId)
+      .single();
+    const config = useRuntimeConfig();
+    const hasActiveSubscription = config.devBypassStripe
+      ? true
+      : profileData &&
+        ["active", "trialing"].includes(
+          (profileData as any).subscription_status,
+        ) &&
+        (profileData as any).subscription_plan !== "free";
+    const addWatermark = !hasActiveSubscription;
+    if (addWatermark) {
+      console.log(`[Job ${jobId}] Free user — watermark will be added`);
+    }
+
     // Download video from Supabase Storage
     const v = video as any;
     const { data: videoFile } = await supabase.storage
@@ -161,31 +180,30 @@ export async function processVideoJob(
 
       const audioPath = join(tempDir, "audio.mp3");
       await extractAudio(videoLocalPath, audioPath);
-
-      // Upload audio to storage for Deepgram
-      const audioBuffer = await readFile(audioPath);
-      const audioStoragePath = `${userId}/${jobId}/audio.mp3`;
-
-      await supabase.storage
-        .from("audio")
-        .upload(audioStoragePath, audioBuffer, {
-          contentType: "audio/mpeg",
-        });
-
-      // Get a signed URL for Deepgram
-      const { data: audioUrlData } = await supabase.storage
-        .from("audio")
-        .createSignedUrl(audioStoragePath, 3600);
-
-      if (!audioUrlData?.signedUrl) throw new Error("Failed to get audio URL");
+      // NOTE: audio is no longer uploaded to Supabase storage;
+      // it is sent directly to Deepgram as a binary buffer below.
 
       steps.extracting_audio = "done";
 
-      // Transcribe with Deepgram
+      // Transcribe with Deepgram — send audio buffer directly (no signed URL needed)
       steps.transcribing = "loading";
       await updateJobStatus(jobId, "transcribing", 25, { steps });
 
-      transcript = await transcribeAudio(audioUrlData.signedUrl);
+      // Read the local audio file and send bytes directly to Deepgram.
+      // This is more reliable than uploading to Supabase and passing a signed URL
+      // that Deepgram may not be able to reach from its servers.
+      const audioBuffer = await readFile(audioPath);
+      transcript = await transcribeAudio(audioBuffer);
+
+      // Guard: if transcript is empty, fail loudly rather than produce silent videos
+      if (!transcript || transcript.length === 0) {
+        throw new Error(
+          "Deepgram returned an empty transcript — check your API key and audio quality.",
+        );
+      }
+      console.log(
+        `[Job ${jobId}] Transcript obtained: ${transcript.length} words`,
+      );
 
       // Save transcript to job AND to video (cache for future use)
       steps.transcribing = "done";
@@ -274,7 +292,14 @@ export async function processVideoJob(
       );
 
       // Get subtitle segment from transcript
-      const segmentWords = transcript.filter(
+      // DEBUG: safety check — transcript must be set by this point
+      if (!transcript || transcript.length === 0) {
+        console.error(
+          `[Job ${jobId}] BUG: transcript is empty at subtitle burn step!`,
+        );
+      }
+
+      const segmentWords = (transcript || []).filter(
         (w) => w.start >= segment.start && w.end <= segment.end,
       );
 
@@ -288,12 +313,31 @@ export async function processVideoJob(
       const subtitleSegments = groupWordsIntoSegments(adjustedWords, 6);
       const srtContent = transcriptToSrt(subtitleSegments);
 
+      // DEBUG: Log subtitle data before render
+      console.log(`[Job ${jobId}] Segment ${i} subtitle info:`, {
+        segmentRange: `${segment.start}s – ${segment.end}s`,
+        wordsInRange: segmentWords.length,
+        subtitleSegments: subtitleSegments.length,
+        srtLength: srtContent.length,
+        srtEmpty: !srtContent.trim(),
+        styleApplied: subtitleSettings ? "custom" : "default",
+        fontSize: subtitleSettings?.fontSize,
+        addWatermark,
+      });
+
+      if (!srtContent.trim()) {
+        console.warn(
+          `[Job ${jobId}] WARNING: SRT content is empty for segment ${i}! Subtitles will NOT be burned.`,
+        );
+      }
+
       const subtitledPath = join(tempDir, `short_${i}.mp4`);
       await burnSubtitles(
         segmentPath,
         srtContent,
         subtitledPath,
         subtitleSettings,
+        { addWatermark },
       );
 
       // =========================================
