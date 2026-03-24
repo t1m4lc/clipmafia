@@ -13,6 +13,8 @@ watch(
   },
   { immediate: true },
 )
+
+
 </script>
 
 <template>
@@ -121,33 +123,73 @@ watch(
           <p class="mt-4 text-lg text-muted-foreground">From horizontal to vertical in seconds</p>
         </div>
 
-        <div class="flex flex-col md:flex-row items-center justify-center gap-8 max-w-4xl mx-auto">
+        <div class="flex flex-col md:flex-row items-center justify-center gap-12 max-w-4xl mx-auto">
           <!-- Before -->
-          <div class="space-y-3 text-center">
-            <p class="text-sm font-medium text-muted-foreground">BEFORE</p>
-            <div class="relative aspect-video w-80 rounded-lg bg-muted border-2 border-dashed flex items-center justify-center">
+          <div class="space-y-3 text-center shrink-0">
+            <p class="text-sm font-medium text-muted-foreground uppercase tracking-wider">Before</p>
+            <div class="relative aspect-video w-72 rounded-xl bg-muted border-2 border-dashed flex items-center justify-center shadow-sm">
               <div class="text-center space-y-2">
                 <span class="text-4xl">🎥</span>
-                <p class="text-sm text-muted-foreground">16:9 Horizontal Video</p>
+                <p class="text-sm text-muted-foreground">1 × Horizontal Video</p>
+                <p class="text-xs text-muted-foreground/60">16:9 · MP4 / MOV</p>
               </div>
             </div>
           </div>
 
           <!-- Arrow -->
-          <div class="text-4xl">→</div>
+          <div class="flex flex-col items-center gap-2 shrink-0">
+            <span class="text-3xl text-primary">→</span>
+            <span class="text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full">AI magic</span>
+          </div>
 
-          <!-- After -->
-          <div class="space-y-3 text-center">
-            <p class="text-sm font-medium text-muted-foreground">AFTER</p>
-            <div class="relative w-44 aspect-[9/16] rounded-lg bg-gradient-to-b from-primary/20 to-primary/5 border-2 border-primary flex flex-col items-center justify-between p-4">
-              <div class="text-center space-y-1">
-                <span class="text-2xl">📱</span>
-                <p class="text-xs text-muted-foreground">9:16 Vertical Short</p>
+          <!-- After — deck of shorts -->
+          <div class="space-y-3 text-center shrink-0">
+            <p class="text-sm font-medium text-muted-foreground uppercase tracking-wider">After</p>
+            <!-- Deck container -->
+            <div class="relative mx-auto" style="width: 10rem; height: 17.5rem;">
+              <!-- Card 5 (deepest) -->
+              <div
+                class="absolute inset-0 rounded-xl bg-purple-400/10 border border-purple-300/40 shadow-sm"
+                style="transform: translate(26px, 10px) rotate(10deg);"
+              />
+              <!-- Card 4 -->
+              <div
+                class="absolute inset-0 rounded-xl bg-purple-300/15 border border-purple-300/50 shadow"
+                style="transform: translate(19px, 7px) rotate(7deg);"
+              />
+              <!-- Card 3 -->
+              <div
+                class="absolute inset-0 rounded-xl bg-primary/10 border border-primary/30 shadow"
+                style="transform: translate(12px, 4px) rotate(4deg);"
+              />
+              <!-- Card 2 -->
+              <div
+                class="absolute inset-0 rounded-xl bg-primary/15 border border-primary/45 shadow-md"
+                style="transform: translate(6px, 2px) rotate(2deg);"
+              />
+              <!-- Card 1 (front) -->
+              <div
+                class="absolute inset-0 rounded-xl bg-gradient-to-b from-primary/30 to-primary/10 border-2 border-primary shadow-xl flex flex-col items-center justify-between p-3"
+                style="z-index: 10;"
+              >
+                <div class="text-center space-y-1 pt-2">
+                  <span class="text-3xl">📱</span>
+                  <p class="text-xs font-semibold text-primary">Short #1</p>
+                  <p class="text-[10px] text-muted-foreground">9:16 · Smart crop</p>
+                </div>
+                <div class="w-full rounded-md bg-black/10 px-2 py-1.5 text-center">
+                  <p class="text-[10px] font-medium">✨ Auto subtitles</p>
+                </div>
               </div>
-              <div class="w-full rounded bg-black/50 px-2 py-1 text-center">
-                <p class="text-xs text-white font-medium">Smart subtitles here</p>
+              <!-- Batch badge -->
+              <div
+                class="absolute -top-3 -right-3 h-8 w-8 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center shadow-lg ring-2 ring-background"
+                style="z-index: 20;"
+              >
+                ∞
               </div>
             </div>
+            <p class="text-xs text-muted-foreground">Generate multiple shorts from one upload</p>
           </div>
         </div>
       </div>
@@ -156,82 +198,7 @@ watch(
     <!-- Pricing -->
     <section id="pricing" class="border-t bg-muted/50 py-24">
       <div class="container mx-auto px-4">
-        <div class="text-center mb-16">
-          <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Simple Pricing</h2>
-          <p class="mt-4 text-lg text-muted-foreground">Start free, upgrade when you need more</p>
-        </div>
-
-        <div class="grid gap-8 md:grid-cols-3 max-w-5xl mx-auto">
-          <!-- Free -->
-          <Card>
-            <CardHeader>
-              <CardTitle>Free</CardTitle>
-              <CardDescription>For trying it out</CardDescription>
-            </CardHeader>
-            <CardContent class="space-y-4">
-              <div class="text-4xl font-bold">$0<span class="text-lg font-normal text-muted-foreground">/mo</span></div>
-              <ul class="space-y-2 text-sm">
-                <li class="flex items-center gap-2">✅ 3 videos/month</li>
-                <li class="flex items-center gap-2">✅ Auto subtitles</li>
-                <li class="flex items-center gap-2">✅ Center crop</li>
-                <li class="flex items-center gap-2 text-muted-foreground">❌ Smart framing</li>
-              </ul>
-            </CardContent>
-            <CardFooter>
-              <NuxtLink to="/register" class="w-full">
-                <Button variant="outline" class="w-full">Get Started</Button>
-              </NuxtLink>
-            </CardFooter>
-          </Card>
-
-          <!-- Basic -->
-          <Card class="border-primary shadow-lg relative">
-            <div class="absolute -top-3 left-1/2 -translate-x-1/2">
-              <Badge>Most Popular</Badge>
-            </div>
-            <CardHeader>
-              <CardTitle>Basic</CardTitle>
-              <CardDescription>For content creators</CardDescription>
-            </CardHeader>
-            <CardContent class="space-y-4">
-              <div class="text-4xl font-bold">$19<span class="text-lg font-normal text-muted-foreground">/mo</span></div>
-              <ul class="space-y-2 text-sm">
-                <li class="flex items-center gap-2">✅ 20 videos/month</li>
-                <li class="flex items-center gap-2">✅ Auto subtitles</li>
-                <li class="flex items-center gap-2">✅ Smart framing</li>
-                <li class="flex items-center gap-2">✅ Priority processing</li>
-              </ul>
-            </CardContent>
-            <CardFooter>
-              <NuxtLink to="/register" class="w-full">
-                <Button class="w-full">Subscribe</Button>
-              </NuxtLink>
-            </CardFooter>
-          </Card>
-
-          <!-- Pro -->
-          <Card>
-            <CardHeader>
-              <CardTitle>Pro</CardTitle>
-              <CardDescription>For agencies & teams</CardDescription>
-            </CardHeader>
-            <CardContent class="space-y-4">
-              <div class="text-4xl font-bold">$49<span class="text-lg font-normal text-muted-foreground">/mo</span></div>
-              <ul class="space-y-2 text-sm">
-                <li class="flex items-center gap-2">✅ 100 videos/month</li>
-                <li class="flex items-center gap-2">✅ Auto subtitles</li>
-                <li class="flex items-center gap-2">✅ Smart framing</li>
-                <li class="flex items-center gap-2">✅ Priority processing</li>
-                <li class="flex items-center gap-2">✅ API access</li>
-              </ul>
-            </CardContent>
-            <CardFooter>
-              <NuxtLink to="/register" class="w-full">
-                <Button variant="outline" class="w-full">Subscribe</Button>
-              </NuxtLink>
-            </CardFooter>
-          </Card>
-        </div>
+        <PricingCards />
       </div>
     </section>
 
