@@ -40,22 +40,16 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: "Video not found" });
   }
 
-  // Check user quota (skipped when DEV_BYPASS_STRIPE=true)
+  // Server-side generation limit enforcement
   const config = useRuntimeConfig();
-  if (!config.devBypassStripe) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("videos_processed_this_month, monthly_video_limit")
-      .eq("id", user.id)
-      .single();
-
-    if (
-      profile &&
-      profile.videos_processed_this_month >= profile.monthly_video_limit
-    ) {
+  if (!config.bypassPayment) {
+    const generationCheck = await canGenerateShort(user.id);
+    if (!generationCheck.allowed) {
       throw createError({
         statusCode: 429,
-        message: "Monthly video limit reached. Please upgrade your plan.",
+        data: buildDeniedPayload("GENERATION", generationCheck),
+        message:
+          "Monthly shorts generation limit reached. Please upgrade your plan.",
       });
     }
   }
@@ -117,22 +111,8 @@ export default defineEventHandler(async (event) => {
     .update({ status: "processing" })
     .eq("id", videoId);
 
-  // Always increment the monthly counter (bypass only skips the limit *check*, not the counting)
-  const { data: profileData } = await supabase
-    .from("profiles")
-    .select("videos_processed_this_month")
-    .eq("id", user.id)
-    .single();
-
-  if (profileData) {
-    await supabase
-      .from("profiles")
-      .update({
-        videos_processed_this_month:
-          profileData.videos_processed_this_month + 1,
-      })
-      .eq("id", user.id);
-  }
+  // Always increment the generation counter (bypass only skips the limit *check*, not the counting)
+  await incrementGenerationCount(user.id);
 
   // Add to processing queue
   jobQueue.add({

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { DurationOption, Segment } from '~/types/database'
 import { Check, MoreVertical, Play, Download, Trash2, ArrowDownUp, Settings } from 'lucide-vue-next'
 
 definePageMeta({
@@ -34,6 +33,7 @@ const {
 } = useVideos()
 
 const { settings: subtitleSettings } = useSubtitleSettings()
+const { showUpgradeDialog, limitPayload, handleLimitError } = useUsageLimits()
 
 const router = useRouter()
 const deleting = ref(false)
@@ -51,8 +51,6 @@ async function handleDelete() {
     showDeleteDialog.value = false
   }
 }
-
-const { canProcessVideo } = useProfile()
 
 const selectedDuration = ref<DurationOption>(30)
 const generating = ref(false)
@@ -162,17 +160,16 @@ watch(sortMode, (mode) => {
 })
 
 async function confirmGenerate() {
-  if (!canProcessVideo()) {
-    errorMessage.value = 'Monthly video limit reached. Please upgrade your plan.'
-    return
-  }
   generating.value = true
   errorMessage.value = ''
   try {
     await generateShorts(videoId, selectedDuration.value, subtitleSettings.value)
     pollJobStatus(videoId, 2000)
   } catch (e: any) {
-    errorMessage.value = e.message || 'Failed to start processing'
+    // Let the composable check for LIMIT_REACHED — opens the upgrade dialog
+    if (!handleLimitError(e)) {
+      errorMessage.value = e?.data?.message || e.message || 'Failed to start processing'
+    }
     generating.value = false
   }
 }
@@ -818,5 +815,14 @@ const subtitlePreviewStyle = computed(() => {
         @select-segments="devSelectedSegments = $event"
       />
     </template>
+
+    <!-- Upgrade Dialog (triggered by backend 429) -->
+    <UpgradeDialog
+      v-model:open="showUpgradeDialog"
+      :type="limitPayload.type"
+      :used="limitPayload.used"
+      :limit="limitPayload.limit"
+      :reset-date="limitPayload.resetDate"
+    />
   </div>
 </template>

@@ -1,4 +1,3 @@
-import type { TranscriptWord, Segment, DurationOption } from "~/types/database";
 import { SEGMENT_CONSTRAINTS } from "./overlayConfig";
 
 /**

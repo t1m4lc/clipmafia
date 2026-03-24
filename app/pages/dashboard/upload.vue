@@ -5,7 +5,8 @@ definePageMeta({
 })
 
 const { uploadVideo } = useVideos()
-const { profile, canProcessVideo, fetchProfile, getUploadLimit, getUploadLimitInfo } = useProfile()
+const { profile, fetchProfile, getUploadLimit, getUploadLimitInfo } = useProfile()
+const { showUpgradeDialog, limitPayload, handleLimitError } = useUsageLimits()
 
 const uploadLimitInfo = computed(() => getUploadLimitInfo())
 const uploadLimitBytes = computed(() => getUploadLimit())
@@ -68,11 +69,6 @@ function clearFile() {
 async function handleUpload() {
   if (!selectedFile.value) return
 
-  if (!canProcessVideo()) {
-    errorMessage.value = 'You have reached your monthly video limit. Please upgrade your plan.'
-    return
-  }
-
   uploading.value = true
   uploadProgress.value = 0
   errorMessage.value = ''
@@ -87,7 +83,10 @@ async function handleUpload() {
     uploadProgress.value = 100
     await navigateTo(`/dashboard/videos/${video.id}`)
   } catch (e: any) {
-    errorMessage.value = e.message || 'Upload failed. Please try again.'
+    // Let the composable check for LIMIT_REACHED — opens the upgrade dialog
+    if (!handleLimitError(e)) {
+      errorMessage.value = e?.data?.message || e.message || 'Upload failed. Please try again.'
+    }
     uploading.value = false
   }
 }
@@ -104,14 +103,6 @@ function formatFileSize(bytes: number): string {
     <div>
       <h1 class="text-3xl font-bold">Upload Video</h1>
       <p class="text-muted-foreground mt-1">Upload a horizontal video to generate shorts</p>
-    </div>
-
-    <!-- Quota Warning -->
-    <div v-if="profile && !canProcessVideo()" class="rounded-lg border border-destructive bg-destructive/10 p-4">
-      <p class="text-sm font-medium text-destructive">
-        You've used all {{ profile.monthly_video_limit }} videos this month.
-        <NuxtLink to="/pricing" class="underline">Upgrade your plan</NuxtLink> for more.
-      </p>
     </div>
 
     <Card>
@@ -141,7 +132,7 @@ function formatFileSize(bytes: number): string {
               <p class="text-sm text-muted-foreground mt-1">
                 MP4, MOV, AVI, WebM, MKV ·
                 <span v-if="uploadLimitInfo">
-                  Max {{ uploadLimitInfo.mb }} MB (≈ {{ uploadLimitInfo.minutes }} min)
+                  Max {{ uploadLimitInfo.mb }} MB
                   <NuxtLink v-if="profile?.subscription_plan === 'free'" to="/pricing" class="underline ml-1">Upgrade</NuxtLink>
                 </span>
                 <span v-else>Unlimited size</span>
@@ -183,5 +174,14 @@ function formatFileSize(bytes: number): string {
 
       </CardContent>
     </Card>
+
+    <!-- Upgrade Dialog (triggered by backend 429) -->
+    <UpgradeDialog
+      v-model:open="showUpgradeDialog"
+      :type="limitPayload.type"
+      :used="limitPayload.used"
+      :limit="limitPayload.limit"
+      :reset-date="limitPayload.resetDate"
+    />
   </div>
 </template>

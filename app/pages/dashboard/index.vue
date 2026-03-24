@@ -5,11 +5,25 @@ definePageMeta({
 })
 
 const { videos, loading, fetchVideos } = useVideos()
-const { profile, fetchProfile } = useProfile()
+const { profile, fetchProfile, effectivePlan, fetchMonthlyUsage, usageStats } = useProfile()
 
 onMounted(async () => {
   await Promise.all([fetchVideos(), fetchProfile()])
+  await fetchMonthlyUsage()
 })
+
+const stats = computed(() => usageStats())
+
+const upgradeSettingsOpen = ref(false)
+const config = useRuntimeConfig()
+
+function handleSettingsClick() {
+  if (!config.public.bypassPayment && effectivePlan() === 'free') {
+    upgradeSettingsOpen.value = true
+  } else {
+    navigateTo('/dashboard/settings')
+  }
+}
 
 function getStatusColor(status: string) {
   switch (status) {
@@ -31,11 +45,9 @@ function getStatusColor(status: string) {
         <p class="text-muted-foreground">Manage your videos and shorts</p>
       </div>
       <div class="space-x-2">
-        <NuxtLink to="/dashboard/settings">
-          <Button variant="outline">
-            ⚙️ Settings
-          </Button>
-        </NuxtLink>
+        <Button variant="outline" @click="handleSettingsClick">
+          ⚙️ Settings
+        </Button>
         <NuxtLink to="/dashboard/upload">
           <Button >
             📤 Upload Video
@@ -45,24 +57,53 @@ function getStatusColor(status: string) {
     </div>
 
     <!-- Stats -->
-    <div v-if="profile" class="grid gap-4 sm:grid-cols-3">
+    <div v-if="profile" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <!-- Total videos -->
       <Card>
         <CardContent class="pt-6">
           <div class="text-2xl font-bold">{{ videos.length }}</div>
           <p class="text-sm text-muted-foreground">Total Videos</p>
         </CardContent>
       </Card>
+
+      <!-- Current plan -->
       <Card>
         <CardContent class="pt-6">
-          <div class="text-2xl font-bold">{{ profile.videos_processed_this_month }}/{{ profile.monthly_video_limit }}</div>
-          <p class="text-sm text-muted-foreground">Videos This Month</p>
-          <Progress :model-value="profile.videos_processed_this_month" :max="profile.monthly_video_limit" class="mt-2" />
+          <div class="text-2xl font-bold capitalize">{{ effectivePlan() }}</div>
+          <p class="text-sm text-muted-foreground">Current Plan</p>
+          <NuxtLink v-if="effectivePlan() === 'free'" to="/pricing" class="text-xs text-primary underline mt-1 block">Upgrade</NuxtLink>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent class="pt-6">
-          <div class="text-2xl font-bold capitalize">{{ profile.subscription_plan }}</div>
-          <p class="text-sm text-muted-foreground">Current Plan</p>
+
+      <!-- Uploads this month -->
+      <Card :class="stats.uploadsAtLimit ? 'border-destructive' : ''">
+        <CardContent class="pt-6 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-2xl font-bold" :class="stats.uploadsAtLimit ? 'text-destructive' : ''">{{ stats.uploadsUsed }}/{{ stats.uploadsLimit }}</span>
+            <span v-if="stats.uploadsAtLimit" class="flex h-2.5 w-2.5">
+              <span class="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-destructive opacity-75" />
+              <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-destructive" />
+            </span>
+          </div>
+          <p class="text-sm text-muted-foreground">📤 Uploads this month</p>
+          <Progress :model-value="stats.uploadsUsed" :max="stats.uploadsLimit" class="h-1.5" />
+          <p v-if="stats.uploadsAtLimit" class="text-xs text-destructive font-medium">Limit reached</p>
+        </CardContent>
+      </Card>
+
+      <!-- Generations this month -->
+      <Card :class="stats.generationsAtLimit ? 'border-destructive' : ''">
+        <CardContent class="pt-6 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-2xl font-bold" :class="stats.generationsAtLimit ? 'text-destructive' : ''">{{ stats.generationsUsed }}/{{ stats.generationsLimit === Infinity ? '∞' : stats.generationsLimit }}</span>
+            <span v-if="stats.generationsAtLimit" class="flex h-2.5 w-2.5">
+              <span class="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-destructive opacity-75" />
+              <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-destructive" />
+            </span>
+          </div>
+          <p class="text-sm text-muted-foreground">✨ Generations this month</p>
+          <Progress v-if="stats.generationsLimit !== Infinity" :model-value="stats.generationsUsed" :max="stats.generationsLimit" class="h-1.5" />
+          <p v-if="stats.generationsAtLimit" class="text-xs text-destructive font-medium">Limit reached</p>
         </CardContent>
       </Card>
     </div>
@@ -79,12 +120,10 @@ function getStatusColor(status: string) {
         <div class="text-4xl mb-4">🎥</div>
         <h3 class="text-lg font-medium">No videos yet</h3>
         <p class="text-muted-foreground mt-1">Upload your first video to get started</p>
-        <NuxtLink to="/dashboard/upload" class="mt-4 inline-block">
+        <NuxtLink to="/dashboard/upload" class="mt-4 mr-2 inline-block">
           <Button>Upload Video</Button>
         </NuxtLink>
-        <NuxtLink to="/dashboard/settings" class="mt-4 inline-block">
-          <Button>Settings</Button>
-        </NuxtLink>
+        <Button class="mt-4" variant="outline" @click="handleSettingsClick">Settings</Button>
 
       </div>
 
@@ -117,4 +156,26 @@ function getStatusColor(status: string) {
       </div>
     </div>
   </div>
+
+  <!-- Settings upgrade dialog (free plan) -->
+  <Dialog :open="upgradeSettingsOpen" @update:open="upgradeSettingsOpen = $event">
+    <div class="space-y-6">
+      <div class="space-y-2 text-center">
+        <div class="text-5xl">⚙️</div>
+        <h2 class="text-xl font-bold">Pro Feature</h2>
+        <p class="text-muted-foreground text-sm">
+          Subtitle style customization is available on <strong>Pro</strong> and <strong>Business</strong> plans.
+          Upgrade to personalize fonts, colors, animations and more.
+        </p>
+      </div>
+      <div class="flex flex-col gap-2">
+        <Button @click="navigateTo('/pricing')">
+          🚀 Upgrade Now
+        </Button>
+        <Button variant="outline" @click="upgradeSettingsOpen = false">
+          Maybe Later
+        </Button>
+      </div>
+    </div>
+  </Dialog>
 </template>

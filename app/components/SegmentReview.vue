@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { Segment } from '~/types/database'
 
 const props = defineProps<{
   segments: Segment[]

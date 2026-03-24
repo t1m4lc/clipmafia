@@ -1,5 +1,3 @@
-import type { JobStatus } from "~/types/database";
-
 /**
  * In-memory job queue for processing videos.
  * In production, replace with a proper queue system (BullMQ, etc.)

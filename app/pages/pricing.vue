@@ -4,9 +4,8 @@ definePageMeta({
 })
 
 const user = useSupabaseUser()
-const { profile, fetchProfile } = useProfile()
+const { profile, fetchProfile, effectivePlan } = useProfile()
 const loading = ref(false)
-const config = useRuntimeConfig()
 
 onMounted(() => {
   if (user.value) {
@@ -14,7 +13,19 @@ onMounted(() => {
   }
 })
 
-async function subscribe(plan: 'basic' | 'pro') {
+const currentPlan = computed(() => effectivePlan())
+const limits = computed(() => ({
+  free: SUBSCRIPTION_LIMITS.FREE,
+  pro: SUBSCRIPTION_LIMITS.PRO,
+  business: SUBSCRIPTION_LIMITS.BUSINESS,
+}))
+
+function formatSize(mb: number): string {
+  if (mb < 1024) return `${mb} MB`
+  return `${mb / 1024} GB`
+}
+
+async function subscribe(plan: 'pro' | 'business') {
   if (!user.value) {
     await navigateTo('/register')
     return
@@ -60,7 +71,7 @@ async function subscribe(plan: 'basic' | 'pro') {
     <div class="container mx-auto px-4 py-16">
       <div class="text-center mb-16">
         <h1 class="text-4xl font-bold tracking-tight">Simple, transparent pricing</h1>
-        <p class="mt-4 text-lg text-muted-foreground">Choose the plan that fits your needs</p>
+        <p class="mt-4 text-lg text-muted-foreground">Choose the plan that fits your content creation needs</p>
       </div>
 
       <div class="grid gap-8 md:grid-cols-3 max-w-5xl mx-auto">
@@ -68,86 +79,102 @@ async function subscribe(plan: 'basic' | 'pro') {
         <Card>
           <CardHeader>
             <CardTitle>Free</CardTitle>
-            <CardDescription>For trying it out</CardDescription>
+            <CardDescription>Get started for free</CardDescription>
           </CardHeader>
           <CardContent class="space-y-4">
-            <div class="text-4xl font-bold">$0<span class="text-lg font-normal text-muted-foreground">/mo</span></div>
+            <div class="text-4xl font-bold">€0<span class="text-lg font-normal text-muted-foreground">/mo</span></div>
             <ul class="space-y-3 text-sm">
-              <li class="flex items-center gap-2">✅ 3 videos per month</li>
+              <li class="flex items-center gap-2">✅ {{ limits.free.videoUploadsPerMonth }} video uploads / month</li>
+              <li class="flex items-center gap-2">✅ {{ limits.free.shortsGenerationsPerMonth }} shorts generations / month</li>
               <li class="flex items-center gap-2">✅ Auto subtitles</li>
               <li class="flex items-center gap-2">✅ Center crop framing</li>
-              <li class="flex items-center gap-2 text-muted-foreground">❌ Smart AI framing</li>
-              <li class="flex items-center gap-2 text-muted-foreground">❌ Priority processing</li>
+              <li class="flex items-center gap-2 text-muted-foreground">⚠️ Max {{ formatSize(limits.free.maxFileSizeMb) }} per file</li>
+              <li class="flex items-center gap-2 text-muted-foreground">⚠️ Watermark on shorts</li>
             </ul>
           </CardContent>
           <CardFooter>
             <Button
               variant="outline"
               class="w-full"
-              :disabled="profile?.subscription_plan === 'free'"
+              disabled
             >
-              {{ profile?.subscription_plan === 'free' ? 'Current Plan' : 'Downgrade' }}
+              {{ currentPlan === 'free' ? 'Current Plan' : 'Free Plan' }}
             </Button>
           </CardFooter>
         </Card>
 
-        <!-- Basic (highlighted) -->
+        <!-- Pro (highlighted) -->
         <Card class="border-primary shadow-lg relative">
           <div class="absolute -top-3 left-1/2 -translate-x-1/2">
             <Badge>Most Popular</Badge>
           </div>
           <CardHeader>
-            <CardTitle>Basic</CardTitle>
+            <CardTitle>Pro</CardTitle>
             <CardDescription>For content creators</CardDescription>
           </CardHeader>
           <CardContent class="space-y-4">
-            <div class="text-4xl font-bold">$19<span class="text-lg font-normal text-muted-foreground">/mo</span></div>
+            <div class="text-4xl font-bold">€9<span class="text-lg font-normal text-muted-foreground">/mo</span></div>
             <ul class="space-y-3 text-sm">
-              <li class="flex items-center gap-2">✅ 20 videos per month</li>
+              <li class="flex items-center gap-2">✅ {{ limits.pro.videoUploadsPerMonth }} video uploads / month</li>
+              <li class="flex items-center gap-2">✅ {{ limits.pro.shortsGenerationsPerMonth }} shorts generations / month</li>
               <li class="flex items-center gap-2">✅ Auto subtitles</li>
-              <li class="flex items-center gap-2">✅ Smart AI framing</li>
-              <li class="flex items-center gap-2">✅ Priority processing</li>
-              <li class="flex items-center gap-2 text-muted-foreground">❌ API access</li>
+              <li class="flex items-center gap-2">✅ Center crop framing</li>
+              <li class="flex items-center gap-2">✅ Up to {{ formatSize(limits.pro.maxFileSizeMb) }} per file</li>
+              <li class="flex items-center gap-2">✅ No watermark</li>
             </ul>
           </CardContent>
           <CardFooter>
             <Button
               class="w-full"
-              :disabled="loading || profile?.subscription_plan === 'basic'"
-              @click="subscribe('basic')"
+              :disabled="loading || currentPlan === 'pro'"
+              @click="subscribe('pro')"
             >
-              {{ profile?.subscription_plan === 'basic' ? 'Current Plan' : loading ? 'Loading...' : 'Subscribe' }}
+              {{ currentPlan === 'pro' ? 'Current Plan' : loading ? 'Loading...' : 'Subscribe' }}
             </Button>
           </CardFooter>
         </Card>
 
-        <!-- Pro -->
+        <!-- Business -->
         <Card>
           <CardHeader>
-            <CardTitle>Pro</CardTitle>
+            <CardTitle>Business</CardTitle>
             <CardDescription>For agencies & teams</CardDescription>
           </CardHeader>
           <CardContent class="space-y-4">
-            <div class="text-4xl font-bold">$49<span class="text-lg font-normal text-muted-foreground">/mo</span></div>
+            <div class="text-4xl font-bold">€45<span class="text-lg font-normal text-muted-foreground">/mo</span></div>
             <ul class="space-y-3 text-sm">
-              <li class="flex items-center gap-2">✅ 100 videos per month</li>
+              <li class="flex items-center gap-2">✅ <b>{{ limits.business.videoUploadsPerMonth }}</b> video uploads / month</li>
+              <li class="flex items-center gap-2">✅ <b>Unlimited</b> shorts generations</li>
               <li class="flex items-center gap-2">✅ Auto subtitles</li>
-              <li class="flex items-center gap-2">✅ Smart AI framing</li>
-              <li class="flex items-center gap-2">✅ Priority processing</li>
-              <li class="flex items-center gap-2">✅ API access</li>
+              <li class="flex items-center gap-2">✅ Center crop framing</li>
+              <li class="flex items-center gap-2">✅ Up to {{ formatSize(limits.business.maxFileSizeMb) }} per file</li>
+              <li class="flex items-center gap-2">✅ No watermark</li>
             </ul>
           </CardContent>
           <CardFooter>
             <Button
               variant="outline"
               class="w-full"
-              :disabled="loading || profile?.subscription_plan === 'pro'"
-              @click="subscribe('pro')"
+              :disabled="loading || currentPlan === 'business'"
+              @click="subscribe('business')"
             >
-              {{ profile?.subscription_plan === 'pro' ? 'Current Plan' : loading ? 'Loading...' : 'Subscribe' }}
+              {{ currentPlan === 'business' ? 'Current Plan' : loading ? 'Loading...' : 'Subscribe' }}
             </Button>
           </CardFooter>
         </Card>
+      </div>
+
+      <div class="text-center mt-16">
+<p class="mt-3 text-base font-medium text-primary">
+  ⚡ Upload once, generate dozens of ready-to-post shorts in one click : <b>save hours of editing every week</b>.
+</p>
+</div>
+
+      <!-- FAQ / Transparency Note -->
+      <div class="mt-16 max-w-2xl mx-auto text-center text-xs text-muted-foreground space-y-2">
+        <p>All plans include AI-powered segment detection and customizable subtitle styles.</p>
+        <p>Usage counters reset automatically on the 1st of each month.</p>
+        <p>Regenerating shorts counts toward your monthly generation limit.</p>
       </div>
     </div>
   </div>

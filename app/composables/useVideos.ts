@@ -1,12 +1,6 @@
-import type {
-  Database,
-  TranscriptWord,
-  SubtitleSettings,
-} from "~/types/database";
-
-type Video = Database["public"]["Tables"]["videos"]["Row"];
-type Job = Database["public"]["Tables"]["jobs"]["Row"];
-type Short = Database["public"]["Tables"]["shorts"]["Row"];
+type Video = Tables<"videos">;
+type Job = Tables<"jobs">;
+type Short = Tables<"shorts">;
 
 /** Format seconds to SRT time format: HH:MM:SS,mmm */
 function formatSrtTime(seconds: number): string {
@@ -141,7 +135,10 @@ export function useVideos() {
   }
 
   /**
-   * Upload a video file to Supabase Storage.
+   * Upload a video file to Supabase Storage, then register it
+   * via the server-side API (which enforces upload limits).
+   * Throws the raw $fetch error on failure so callers can
+   * inspect `error.data` for LIMIT_REACHED payloads.
    */
   async function uploadVideo(file: File) {
     if (!user.value) throw new Error("Not authenticated");
@@ -149,7 +146,7 @@ export function useVideos() {
     const fileExt = file.name.split(".").pop();
     const fileName = `${user.value.id}/${Date.now()}.${fileExt}`;
 
-    // Upload to storage
+    // 1. Upload binary to Supabase Storage
     const { error: uploadError } = await supabase.storage
       .from("videos")
       .upload(fileName, file, {
@@ -159,23 +156,19 @@ export function useVideos() {
 
     if (uploadError) throw uploadError;
 
-    // Create video record in database
-    const { data, error: dbError } = await supabase
-      .from("videos")
-      .insert({
-        user_id: user.value.id,
+    // 2. Create the video record via server API (enforces limits)
+    const video = await $fetch("/api/videos/upload", {
+      method: "POST",
+      body: {
+        storagePath: fileName,
         title: file.name.replace(/\.[^/.]+$/, ""),
-        original_filename: file.name,
-        storage_path: fileName,
-        file_size: file.size,
-        mime_type: file.type,
-        status: "uploaded",
-      })
-      .select()
-      .single();
+        originalFilename: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+      },
+    });
 
-    if (dbError) throw dbError;
-    return data;
+    return video;
   }
 
   /**

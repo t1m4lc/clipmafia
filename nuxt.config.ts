@@ -25,17 +25,17 @@ export default defineNuxtConfig({
     deepgramApiKey: process.env.DEEPGRAM_API_KEY || "",
     mistralApiKey: process.env.MISTRAL_API_KEY || "",
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
-    // Dev bypass — skip all Stripe/quota checks
-    devBypassStripe: process.env.DEV_BYPASS_STRIPE === "true",
+    // Bypass — skip all Stripe/quota checks
+    bypassPayment: process.env.BYPASS_PAYMENT === "true",
 
     // Public keys (available client-side)
     public: {
       appUrl: process.env.APP_URL || "http://localhost:3000",
       stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || "",
-      stripePriceIdBasic: process.env.STRIPE_PRICE_ID_BASIC || "",
       stripePriceIdPro: process.env.STRIPE_PRICE_ID_PRO || "",
-      // Exposed to client so the UI can also bypass quota warnings
-      devBypassStripe: process.env.DEV_BYPASS_STRIPE === "true",
+      stripePriceIdBusiness: process.env.STRIPE_PRICE_ID_BUSINESS || "",
+      // Exposed to client so the UI can also bypass quota/plan checks
+      bypassPayment: process.env.BYPASS_PAYMENT === "true",
       // Dev mode: show segment review panel & debug tools
       devMode: process.env.DEV_MODE === "true",
     },
@@ -43,6 +43,7 @@ export default defineNuxtConfig({
 
   // Supabase config
   supabase: {
+    types: "./shared/types/database.types.ts",
     redirect: false,
     redirectOptions: {
       login: "/login",

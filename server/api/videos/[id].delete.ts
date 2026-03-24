@@ -1,12 +1,9 @@
 import { serverSupabaseUser } from "#supabase/server";
-import type { Database } from "~/types/database";
+import type { Tables } from "#shared/types/database.types";
 
-type VideoRow = Database["public"]["Tables"]["videos"]["Row"];
-type ShortStoragePath = Pick<
-  Database["public"]["Tables"]["shorts"]["Row"],
-  "storage_path"
->;
-type JobId = Pick<Database["public"]["Tables"]["jobs"]["Row"], "id">;
+type VideoRow = Tables<"videos">;
+type ShortStoragePath = Pick<Tables<"shorts">, "storage_path">;
+type JobId = Pick<Tables<"jobs">, "id">;
 
 /**
  * DELETE /api/videos/[id]

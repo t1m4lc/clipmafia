@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { SubtitleSettings } from '~/types/database'
-import { SUBTITLE_RANGES, RENDER } from '~/lib/overlayConfig'
+import { SUBTITLE_RANGES, RENDER, WATERMARK_CONFIG, getWatermarkAlignment } from '~/lib/overlayConfig'
 
 const props = defineProps<{
   modelValue: SubtitleSettings
   sampleText?: string
+  showWatermark?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -82,6 +82,27 @@ const subtitlePositionStyle = computed(() => {
   if (isBottom) return { ...base, bottom: `${s.marginV + 40}px` }
   if (isTop)    return { ...base, top: `${s.marginV + 80}px` }
   return { ...base, top: '50%', transform: 'translateY(-50%)' }
+})
+
+// Watermark position (opposite end from subtitles)
+const watermarkPositionStyle = computed(() => {
+  const al = getWatermarkAlignment(settings.value.alignment)
+  const base = {
+    position: 'absolute' as const,
+    left: '0', right: '0',
+    textAlign: 'center' as const,
+    fontSize: `${WATERMARK_CONFIG.fontSize}px`,
+    fontFamily: 'Arial, sans-serif',
+    fontWeight: '400',
+    color: '#FFFFFF',
+    opacity: WATERMARK_CONFIG.opacity,
+    textShadow: '-3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000, 2px 2px 4px rgba(0,0,0,0.6)',
+    pointerEvents: 'none' as const,
+    letterSpacing: '0.5px',
+  }
+  return al === 8
+    ? { ...base, top: `${WATERMARK_CONFIG.marginV}px` }
+    : { ...base, bottom: `${WATERMARK_CONFIG.marginV}px` }
 })
 </script>
 
@@ -244,6 +265,11 @@ const subtitlePositionStyle = computed(() => {
             <div :style="subtitleStyle">
               {{ previewSample }}
             </div>
+          </div>
+
+          <!-- Watermark layer (free plan only) -->
+          <div v-if="showWatermark" :style="watermarkPositionStyle">
+            {{ WATERMARK_CONFIG.text }}
           </div>
 
           <!-- Home indicator -->

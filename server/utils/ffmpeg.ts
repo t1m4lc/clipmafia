@@ -7,12 +7,10 @@ import { tmpdir } from "os";
 const execFileAsync = promisify(execFile);
 
 import {
-  DEFAULT_SUBTITLE_STYLE as OVERLAY_DEFAULTS,
+  DEFAULT_SUBTITLE_STYLE,
   WATERMARK_CONFIG,
   getWatermarkAlignment,
   RENDER,
-  type SubtitleStyleConfig,
-  type WatermarkConfig,
 } from "./overlayConfig";
 
 export interface SubtitleStyle {
@@ -26,18 +24,6 @@ export interface SubtitleStyle {
   marginV?: number;
   alignment?: number; // 2 = bottom center
 }
-
-const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
-  fontName: OVERLAY_DEFAULTS.fontName,
-  fontSize: OVERLAY_DEFAULTS.fontSize,
-  primaryColor: OVERLAY_DEFAULTS.primaryColor,
-  outlineColor: OVERLAY_DEFAULTS.outlineColor,
-  bold: OVERLAY_DEFAULTS.bold,
-  outline: OVERLAY_DEFAULTS.outline,
-  shadow: OVERLAY_DEFAULTS.shadow,
-  marginV: OVERLAY_DEFAULTS.marginV,
-  alignment: OVERLAY_DEFAULTS.alignment,
-};
 
 /** Convert a hex color like "#RRGGBB" to ASS format "&H00BBGGRR" */
 function hexToAss(hex: string): string {
@@ -391,9 +377,12 @@ export async function burnSubtitles(
     const wmFilter = [
       `drawtext=text='${wm.text}'`,
       `fontsize=${wmFontSize}`,
-      `fontcolor=white@${wm.opacity}`,
+      `fontcolor=${wm.color}@${wm.opacity}`,
       `borderw=${wm.outline}`,
-      `bordercolor=black@${wm.opacity}`,
+      `bordercolor=${wm.outlineColor}@${wm.opacity}`,
+      `shadowx=2`,
+      `shadowy=2`,
+      `shadowcolor=black@0.6`,
       `x=(w-text_w)/2`,
       wmAlignment === 8 ? `y=${wmMarginV}` : `y=h-text_h-${wmMarginV}`,
     ].join(":");

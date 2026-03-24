@@ -1,8 +1,23 @@
 <script setup lang="ts">
 definePageMeta({
   layout: 'dashboard',
-  middleware: 'auth',
+  middleware: ['auth', 'settings'],
 })
+
+const config = useRuntimeConfig()
+const { profile, fetchProfile, effectivePlan } = useProfile()
+
+// Always fetch profile so effectivePlan() is accurate
+onMounted(async () => {
+  await fetchProfile()
+  // Client-side guard: redirect free users when payment is not bypassed
+  if (!config.public.bypassPayment && effectivePlan() === 'free') {
+    await navigateTo('/dashboard')
+  }
+})
+
+// Show watermark in preview when user is on free plan (regardless of bypass)
+const showWatermark = computed(() => effectivePlan() === 'free')
 
 const { settings, save, reset, isCustomized, DEFAULT_SUBTITLE_SETTINGS } = useSubtitleSettings()
 const saved = ref(false)
@@ -26,6 +41,9 @@ function handleReset() {
 
 <template>
   <div class="space-y-8">
+        <NuxtLink to="/dashboard" class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
+      &larr; Back to Dashboard
+    </NuxtLink>
     <div>
       <h1 class="text-3xl font-bold">Settings</h1>
       <p class="text-muted-foreground mt-1">
@@ -46,7 +64,7 @@ function handleReset() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <SubtitleSettings v-model="localSettings" />
+        <SubtitleSettings v-model="localSettings" :show-watermark="showWatermark" />
       </CardContent>
     </Card>
 

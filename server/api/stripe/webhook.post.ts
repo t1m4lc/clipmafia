@@ -1,125 +1,127 @@
-import Stripe from 'stripe'
+import Stripe from "stripe";
 
 /**
  * POST /api/stripe/webhook
  * Handles Stripe webhook events for subscription management.
  */
 export default defineEventHandler(async (event) => {
-  const config = useRuntimeConfig()
-  const stripe = useStripe()
-  const supabase = useSupabaseAdmin()
+  const config = useRuntimeConfig();
+  const stripe = useStripe();
+  const supabase = useSupabaseAdmin();
 
   // Get raw body for signature verification
-  const body = await readRawBody(event)
-  const signature = getHeader(event, 'stripe-signature')
+  const body = await readRawBody(event);
+  const signature = getHeader(event, "stripe-signature");
 
   if (!body || !signature) {
-    throw createError({ statusCode: 400, message: 'Missing body or signature' })
+    throw createError({
+      statusCode: 400,
+      message: "Missing body or signature",
+    });
   }
 
-  let stripeEvent: Stripe.Event
+  let stripeEvent: Stripe.Event;
 
   try {
     stripeEvent = stripe.webhooks.constructEvent(
       body,
       signature,
       config.stripeWebhookSecret,
-    )
+    );
   } catch (err: any) {
-    console.error('Webhook signature verification failed:', err.message)
-    throw createError({ statusCode: 400, message: `Webhook Error: ${err.message}` })
+    console.error("Webhook signature verification failed:", err.message);
+    throw createError({
+      statusCode: 400,
+      message: `Webhook Error: ${err.message}`,
+    });
   }
 
   // Handle events
   switch (stripeEvent.type) {
-    case 'checkout.session.completed': {
-      const session = stripeEvent.data.object as Stripe.Checkout.Session
-      const userId = session.metadata?.supabase_user_id
-      const plan = session.metadata?.plan as 'basic' | 'pro'
+    case "checkout.session.completed": {
+      const session = stripeEvent.data.object as Stripe.Checkout.Session;
+      const userId = session.metadata?.supabase_user_id;
+      const plan = session.metadata?.plan as "pro" | "business";
 
       if (userId && plan) {
-        const limits: Record<string, number> = {
-          basic: 20,
-          pro: 100,
-        }
-
         await supabase
-          .from('profiles')
+          .from("profiles")
           .update({
             subscription_id: session.subscription as string,
-            subscription_status: 'active',
+            subscription_status: "active",
             subscription_plan: plan,
-            monthly_video_limit: limits[plan] || 20,
             billing_cycle_start: new Date().toISOString(),
           })
-          .eq('id', userId)
+          .eq("id", userId);
       }
-      break
+      break;
     }
 
-    case 'customer.subscription.updated': {
-      const subscription = stripeEvent.data.object as Stripe.Subscription
+    case "customer.subscription.updated": {
+      const subscription = stripeEvent.data.object as Stripe.Subscription;
 
       // Find profile by stripe customer id
       const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('stripe_customer_id', subscription.customer as string)
-        .single()
+        .from("profiles")
+        .select("id")
+        .eq("stripe_customer_id", subscription.customer as string)
+        .single();
 
       if (profile) {
         await supabase
-          .from('profiles')
+          .from("profiles")
           .update({
-            subscription_status: subscription.status === 'active' ? 'active' : subscription.status as any,
+            subscription_status:
+              subscription.status === "active"
+                ? "active"
+                : (subscription.status as any),
           })
-          .eq('id', profile.id)
+          .eq("id", profile.id);
       }
-      break
+      break;
     }
 
-    case 'customer.subscription.deleted': {
-      const subscription = stripeEvent.data.object as Stripe.Subscription
+    case "customer.subscription.deleted": {
+      const subscription = stripeEvent.data.object as Stripe.Subscription;
 
       const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('stripe_customer_id', subscription.customer as string)
-        .single()
+        .from("profiles")
+        .select("id")
+        .eq("stripe_customer_id", subscription.customer as string)
+        .single();
 
       if (profile) {
         await supabase
-          .from('profiles')
+          .from("profiles")
           .update({
-            subscription_status: 'canceled',
-            subscription_plan: 'free',
-            monthly_video_limit: 3,
+            subscription_status: "canceled",
+            subscription_plan: "free",
           })
-          .eq('id', profile.id)
+          .eq("id", profile.id);
       }
-      break
+      break;
     }
 
-    case 'invoice.payment_failed': {
-      const invoice = stripeEvent.data.object as Stripe.Invoice
+    case "invoice.payment_failed": {
+      const invoice = stripeEvent.data.object as Stripe.Invoice;
 
       const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('stripe_customer_id', invoice.customer as string)
-        .single()
+        .from("profiles")
+        .select("id")
+        .eq("stripe_customer_id", invoice.customer as string)
+        .single();
 
       if (profile) {
         await supabase
-          .from('profiles')
+          .from("profiles")
           .update({
-            subscription_status: 'past_due',
+            subscription_status: "past_due",
           })
-          .eq('id', profile.id)
+          .eq("id", profile.id);
       }
-      break
+      break;
     }
   }
 
-  return { received: true }
-})
+  return { received: true };
+});

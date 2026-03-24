@@ -1,5 +1,3 @@
-import type { TranscriptWord } from "~/types/database";
-
 /**
  * Transcribe audio using Deepgram API.
  * Sends the audio file as a binary buffer directly to Deepgram

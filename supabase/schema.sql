@@ -17,7 +17,7 @@ CREATE TABLE public.profiles (
   stripe_customer_id TEXT UNIQUE,
   subscription_id TEXT,
   subscription_status TEXT DEFAULT 'inactive' CHECK (subscription_status IN ('active', 'inactive', 'canceled', 'past_due', 'trialing')),
-  subscription_plan TEXT DEFAULT 'free' CHECK (subscription_plan IN ('free', 'basic', 'pro')),
+  subscription_plan TEXT DEFAULT 'free' CHECK (subscription_plan IN ('free', 'pro', 'business')),
   monthly_video_limit INTEGER DEFAULT 3,
   videos_processed_this_month INTEGER DEFAULT 0,
   billing_cycle_start TIMESTAMPTZ,
@@ -95,6 +95,24 @@ CREATE TABLE public.shorts (
 );
 
 -- ============================================
+-- MONTHLY_USAGE TABLE
+-- Tracks per-user per-month upload and generation counters
+-- ============================================
+CREATE TABLE public.monthly_usage (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+  month TEXT NOT NULL CHECK (month ~ '^\d{4}-\d{2}$'),
+  uploads_count INTEGER DEFAULT 0 NOT NULL CHECK (uploads_count >= 0),
+  generations_count INTEGER DEFAULT 0 NOT NULL CHECK (generations_count >= 0),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, month)
+);
+
+CREATE INDEX IF NOT EXISTS idx_monthly_usage_user_month
+  ON public.monthly_usage (user_id, month);
+
+-- ============================================
 -- ROW LEVEL SECURITY POLICIES
 -- ============================================
 
@@ -150,6 +168,14 @@ CREATE POLICY "Users can delete own shorts"
   ON public.shorts FOR DELETE
   USING (auth.uid() = user_id);
 
+-- Monthly Usage: users can only READ their own usage.
+-- Only the server (service-role) can INSERT/UPDATE.
+ALTER TABLE public.monthly_usage ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own usage"
+  ON public.monthly_usage FOR SELECT
+  USING (auth.uid() = user_id);
+
 -- ============================================
 -- FUNCTIONS & TRIGGERS
 -- ============================================
@@ -192,6 +218,10 @@ CREATE TRIGGER update_videos_updated_at
 
 CREATE TRIGGER update_jobs_updated_at
   BEFORE UPDATE ON public.jobs
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+CREATE TRIGGER update_monthly_usage_updated_at
+  BEFORE UPDATE ON public.monthly_usage
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
 -- Reset monthly video count (call via cron or edge function)

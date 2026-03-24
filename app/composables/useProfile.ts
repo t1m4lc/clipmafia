@@ -1,19 +1,12 @@
-import type { Database } from "~/types/database";
+type Profile = Tables<"profiles">;
 
-type Profile = Database["public"]["Tables"]["profiles"]["Row"];
-
-/**
- * Upload limits per subscription plan.
- * maxFileSizeMB : limit enforced at selection time
- * maxDurationMinutes : informational label shown in the UI
- *
- * NOTE: Free plan is limited to 50 MB by Supabase Storage default
- */
-export const PLAN_LIMITS = {
-  free: { maxFileSizeMB: 50, maxDurationMinutes: 2 },
-  basic: { maxFileSizeMB: 750, maxDurationMinutes: 30 },
-  pro: { maxFileSizeMB: 2000, maxDurationMinutes: 60 },
-} as const;
+/** Resolve SUBSCRIPTION_LIMITS entry for a lowercase plan name. */
+function planLimits(plan: string) {
+  return (
+    SUBSCRIPTION_LIMITS[plan.toUpperCase() as PlanName] ??
+    SUBSCRIPTION_LIMITS.FREE
+  );
+}
 
 /**
  * Composable for user profile management.
@@ -52,11 +45,11 @@ export function useProfile() {
 
   /**
    * Check if user can process more videos this month.
-   * Always returns true when DEV_BYPASS_STRIPE=true.
+   * Always returns true when BYPASS_PAYMENT=true.
    */
   function canProcessVideo(): boolean {
     const config = useRuntimeConfig();
-    if (config.public.devBypassStripe) return true;
+    if (config.public.bypassPayment) return true;
     if (!profile.value) return false;
     return (
       profile.value.videos_processed_this_month <
@@ -66,17 +59,33 @@ export function useProfile() {
 
   /**
    * Get remaining video quota.
-   * Returns 999 when DEV_BYPASS_STRIPE=true.
+   * Returns 999 when BYPASS_PAYMENT=true.
    */
   function remainingQuota(): number {
     const config = useRuntimeConfig();
-    if (config.public.devBypassStripe) return 999;
+    if (config.public.bypassPayment) return 999;
     if (!profile.value) return 0;
     return Math.max(
       0,
       profile.value.monthly_video_limit -
         profile.value.videos_processed_this_month,
     );
+  }
+
+  /**
+   * Resolve the plan that is actually in effect right now.
+   * Any status that is not 'active' or 'trialing' falls back to 'free',
+   * because no paid subscription is active.
+   */
+  function effectivePlan(): "free" | "pro" | "business" {
+    if (!profile.value) return "free";
+    const isActive = ["active", "trialing"].includes(
+      profile.value.subscription_status,
+    );
+    if (!isActive) return "free";
+    const plan = profile.value.subscription_plan;
+    if (plan === "pro" || plan === "business") return plan;
+    return "free";
   }
 
   /**
@@ -89,47 +98,84 @@ export function useProfile() {
    */
   function getUploadLimit(): number {
     const config = useRuntimeConfig();
-    if (config.public.devBypassStripe) return Infinity;
-    if (!profile.value) return PLAN_LIMITS.free.maxFileSizeMB * 1024 * 1024;
-
-    const isActive = ["active", "trialing"].includes(
-      profile.value.subscription_status,
-    );
-    const plan = isActive ? profile.value.subscription_plan : "free";
-    const limitMB =
-      PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS]?.maxFileSizeMB ??
-      PLAN_LIMITS.free.maxFileSizeMB;
-    return limitMB * 1024 * 1024;
+    if (config.public.bypassPayment) return Infinity;
+    const plan = profile.value ? effectivePlan() : "free";
+    return planLimits(plan).maxFileSizeMb * 1024 * 1024;
   }
 
   /**
    * Get upload limit info (MB + duration label) for display in the UI.
    */
-  function getUploadLimitInfo(): { mb: number; minutes: number } | null {
+  function getUploadLimitInfo(): { mb: number } | null {
     const config = useRuntimeConfig();
-    if (config.public.devBypassStripe) return null; // null = unlimited
+    if (config.public.bypassPayment) return null; // null = unlimited
+    const plan = profile.value ? effectivePlan() : "free";
+    const l = planLimits(plan);
+    return { mb: l.maxFileSizeMb };
+  }
 
-    const toInfo = (p: keyof typeof PLAN_LIMITS) => ({
-      mb: PLAN_LIMITS[p].maxFileSizeMB,
-      minutes: PLAN_LIMITS[p].maxDurationMinutes,
-    });
+  // ── Monthly usage (from monthly_usage table) ────────────────────────────
 
-    if (!profile.value) return toInfo("free");
+  const monthlyUsage = ref<{
+    uploads_count: number;
+    generations_count: number;
+  } | null>(null);
 
-    const isActive = ["active", "trialing"].includes(
-      profile.value.subscription_status,
-    );
-    const plan = isActive ? profile.value.subscription_plan : "free";
-    return toInfo((plan as keyof typeof PLAN_LIMITS) ?? "free");
+  function getCurrentMonth(): string {
+    const now = new Date();
+    return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  }
+
+  /**
+   * Fetch this month's usage counters from the monthly_usage table.
+   * Safe to call client-side — RLS allows users to read their own rows.
+   */
+  async function fetchMonthlyUsage() {
+    if (!user.value) return;
+    const { data } = await supabase
+      .from("monthly_usage")
+      .select("uploads_count, generations_count")
+      .eq("user_id", user.value.id)
+      .eq("month", getCurrentMonth())
+      .maybeSingle();
+    monthlyUsage.value = data ?? { uploads_count: 0, generations_count: 0 };
+  }
+
+  /**
+   * Returns the current usage stats for the UI.
+   * All limits derived from effectivePlan() so they're always consistent.
+   */
+  function usageStats() {
+    const plan = effectivePlan();
+    const limits = planLimits(plan);
+    const uploadsUsed = monthlyUsage.value?.uploads_count ?? 0;
+    const generationsUsed = monthlyUsage.value?.generations_count ?? 0;
+    const uploadsAtLimit = uploadsUsed >= limits.videoUploadsPerMonth;
+    const generationsAtLimit =
+      limits.shortsGenerationsPerMonth !== Infinity &&
+      generationsUsed >= limits.shortsGenerationsPerMonth;
+    return {
+      uploadsUsed,
+      uploadsLimit: limits.videoUploadsPerMonth,
+      uploadsAtLimit,
+      generationsUsed,
+      generationsLimit: limits.shortsGenerationsPerMonth,
+      generationsAtLimit,
+      atLimit: uploadsAtLimit || generationsAtLimit,
+    };
   }
 
   return {
     profile,
     loading,
     fetchProfile,
+    effectivePlan,
     canProcessVideo,
     remainingQuota,
     getUploadLimit,
     getUploadLimitInfo,
+    monthlyUsage,
+    fetchMonthlyUsage,
+    usageStats,
   };
 }

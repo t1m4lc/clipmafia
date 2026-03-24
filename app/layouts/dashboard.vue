@@ -1,13 +1,28 @@
 <script setup lang="ts">
 const user = useSupabaseUser()
 const { signOut } = useAuth()
-const { profile, fetchProfile } = useProfile()
+const { profile, fetchProfile, effectivePlan, usageStats } = useProfile()
 
 const mobileMenuOpen = ref(false)
+const managingSubscription = ref(false)
 
-onMounted(() => {
-  fetchProfile()
+onMounted(async () => {
+  await fetchProfile()
 })
+
+const stats = computed(() => usageStats())
+
+async function manageSubscription() {
+  managingSubscription.value = true
+  try {
+    const { url } = await $fetch<{ url: string }>('/api/stripe/portal', { method: 'POST' })
+    if (url) window.location.href = url
+  } catch (e) {
+    console.error('Failed to open Stripe portal:', e)
+  } finally {
+    managingSubscription.value = false
+  }
+}
 </script>
 
 <template>
@@ -18,25 +33,37 @@ onMounted(() => {
         <div class="flex items-center gap-6">
           <NuxtLink to="/dashboard" class="flex items-center gap-2 font-bold text-xl">
             <span class="text-2xl">🎬</span>
-            <span class="bg-gradient-to-r from-primary to-purple-400 bg-clip-text">ClipMafia</span>
+            <span class="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">ClipMafia</span>
           </NuxtLink>
-
-          <!-- <div class="hidden md:flex items-center gap-4">
-          </div> -->
         </div>
 
         <div class="flex items-center gap-4">
-          <!-- Quota indicator -->
-          <div v-if="profile" class="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
-            <span>{{ profile.videos_processed_this_month }}/{{ profile.monthly_video_limit }} videos</span>
-          </div>
-
           <div class="hidden md:flex items-center gap-2">
-            <NuxtLink to="/pricing">
-              <Button variant="outline" size="sm">
-                {{ profile?.subscription_plan === 'free' ? 'Upgrade' : profile?.subscription_plan }}
+            <!-- Upgrade (free plan) -->
+            <NuxtLink v-if="effectivePlan() === 'free'" to="/pricing">
+              <Button
+                variant="outline"
+                size="sm"
+                class="relative"
+                :class="stats.atLimit ? 'border-destructive text-destructive' : ''"
+              >
+                Upgrade
+                <span v-if="stats.atLimit" class="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
+                  <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-destructive" />
+                </span>
               </Button>
             </NuxtLink>
+            <!-- Manage subscription (paid plan) -->
+            <Button
+              v-else
+              variant="outline"
+              size="sm"
+              :disabled="managingSubscription"
+              @click="manageSubscription"
+            >
+              {{ managingSubscription ? '...' : 'Manage subscription' }}
+            </Button>
             <Button variant="ghost" size="sm" @click="signOut">
               Sign out
             </Button>
@@ -60,12 +87,12 @@ onMounted(() => {
         <NuxtLink to="/dashboard/settings" class="block text-sm font-medium" @click="mobileMenuOpen = false">
           ⚙️ Settings
         </NuxtLink>
-        <NuxtLink to="/pricing" class="block text-sm font-medium" @click="mobileMenuOpen = false">
-          Pricing
+        <NuxtLink v-if="effectivePlan() === 'free'" to="/pricing" class="block text-sm font-medium" @click="mobileMenuOpen = false">
+          ⬆️ Upgrade
         </NuxtLink>
-        <div v-if="profile" class="text-sm text-muted-foreground">
-          {{ profile.videos_processed_this_month }}/{{ profile.monthly_video_limit }} videos this month
-        </div>
+        <button v-else class="block text-sm font-medium text-left" :disabled="managingSubscription" @click="manageSubscription; mobileMenuOpen = false">
+          {{ managingSubscription ? '...' : '⚙️ Manage subscription' }}
+        </button>
         <button class="text-sm text-destructive" @click="signOut">Sign out</button>
       </div>
     </nav>

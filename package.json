@@ -10,6 +10,7 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
+    "supabase:introspect": "npx supabase gen types typescript --project-id eamendtwlwkdlwnxsrqm > shared/types/database.types.ts",
     "lint": "eslint ."
   },
   "dependencies": {

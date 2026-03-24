@@ -1,5 +1,4 @@
-import type { SubtitleSettings } from "~/types/database";
-import { DEFAULT_SUBTITLE_STYLE } from "~/lib/overlayConfig";
+import { DEFAULT_SUBTITLE_STYLE } from "#shared/utils/overlayConfig";
 
 const STORAGE_KEY = "clipmafia-subtitle-settings";
 

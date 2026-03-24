@@ -1,6 +1,5 @@
 import { join } from "path";
 import { unlink, readFile } from "fs/promises";
-import type { DurationOption, TranscriptWord, Segment } from "~/types/database";
 import type { SubtitleStyle } from "../../utils/ffmpeg";
 import { generateThumbnail } from "../../utils/ffmpeg";
 import { transcriptToSrt, groupWordsIntoSegments } from "../../utils/deepgram";
@@ -136,7 +135,7 @@ export async function processVideoJob(
       .eq("id", userId)
       .single();
     const config = useRuntimeConfig();
-    const hasActiveSubscription = config.devBypassStripe
+    const hasActiveSubscription = config.bypassPayment
       ? true
       : profileData &&
         ["active", "trialing"].includes(
