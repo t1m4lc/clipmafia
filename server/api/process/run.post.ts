@@ -2,7 +2,12 @@ import { join } from "path";
 import { unlink, readFile } from "fs/promises";
 import type { SubtitleStyle } from "../../utils/ffmpeg";
 import { generateThumbnail } from "../../utils/ffmpeg";
-import { transcriptToSrt, groupWordsIntoSegments } from "../../utils/deepgram";
+import {
+  groupWordsIntoSubtitles,
+  generateSRT,
+  extractWordsForSegment,
+  adjustTimestamps,
+} from "../../utils/subtitles";
 
 /**
  * Step order used to determine which steps can be skipped on resume.
@@ -34,7 +39,6 @@ export async function processVideoJob(
   jobId: string,
   videoId: string,
   userId: string,
-  durationOption: DurationOption,
   subtitleSettings?: SubtitleStyle,
 ): Promise<void> {
   const supabase = useSupabaseAdmin();
@@ -72,7 +76,7 @@ export async function processVideoJob(
     // Look for data from a previous failed/completed job
     const { data: previousJob } = await supabase
       .from("jobs")
-      .select("transcript, segments, failed_at_step, duration_option")
+      .select("transcript, segments, failed_at_step")
       .eq("video_id", videoId)
       .eq("user_id", userId)
       .neq("id", jobId)
@@ -85,8 +89,8 @@ export async function processVideoJob(
       if (!transcript && pj.transcript) {
         transcript = pj.transcript as TranscriptWord[];
       }
-      // Only reuse segments if the previous job used the SAME duration option.
-      if (pj.segments && pj.duration_option === durationOption) {
+      // Reuse segments from previous job (no longer gated on durationOption)
+      if (pj.segments) {
         segments = pj.segments as Segment[];
       }
     }
@@ -235,11 +239,7 @@ export async function processVideoJob(
       steps.detecting_segments = "loading";
       await updateJobStatus(jobId, "detecting_segments", 40, { steps });
 
-      segments = await detectSegments(
-        transcript!,
-        durationOption,
-        metadata.duration,
-      );
+      segments = await detectSegments(transcript!, metadata.duration);
 
       // Save segments to job
       steps.detecting_segments = "done";
@@ -298,33 +298,26 @@ export async function processVideoJob(
         );
       }
 
-      // Use overlap logic instead of strict containment:
-      // Include words that overlap with the segment by at least 50% of the word's duration,
-      // so boundary words aren't silently dropped.
-      const segmentWords = (transcript || []).filter((w) => {
-        if (w.end <= segment.start || w.start >= segment.end) return false;
-        const wordDur = w.end - w.start;
-        const overlapStart = Math.max(w.start, segment.start);
-        const overlapEnd = Math.min(w.end, segment.end);
-        const overlap = overlapEnd - overlapStart;
-        return overlap >= wordDur * 0.5; // include if ≥50% of the word is inside the segment
-      });
+      // Extract words using strict containment (word must be fully within segment ± buffer)
+      // This guarantees displayed words match the audible audio exactly.
+      const segmentWords = extractWordsForSegment(
+        transcript || [],
+        segment.start,
+        segment.end,
+      );
 
       // Adjust timestamps relative to segment start
-      const adjustedWords = segmentWords.map((w) => ({
-        ...w,
-        start: w.start - segment.start,
-        end: w.end - segment.start,
-      }));
+      const adjustedWords = adjustTimestamps(segmentWords, segment.start);
 
-      const subtitleSegments = groupWordsIntoSegments(adjustedWords, 6);
-      const srtContent = transcriptToSrt(subtitleSegments);
+      // Group into short, readable subtitle blocks (≤4 words, split on silences)
+      const subtitleBlocks = groupWordsIntoSubtitles(adjustedWords);
+      const srtContent = generateSRT(subtitleBlocks);
 
       // DEBUG: Log subtitle data before render
       console.log(`[Job ${jobId}] Segment ${i} subtitle info:`, {
         segmentRange: `${segment.start}s – ${segment.end}s`,
         wordsInRange: segmentWords.length,
-        subtitleSegments: subtitleSegments.length,
+        subtitleBlocks: subtitleBlocks.length,
         srtLength: srtContent.length,
         srtEmpty: !srtContent.trim(),
         styleApplied: subtitleSettings ? "custom" : "default",

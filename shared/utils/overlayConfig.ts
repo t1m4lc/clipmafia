@@ -86,17 +86,28 @@ export const RENDER = {
   height: 1920,
 } as const;
 
+// ─── Subtitle Display Constraints ───────────────────────────────────────────
+
+export const SUBTITLE_CONSTRAINTS = {
+  /** Max words per subtitle block (keeps text short and readable) */
+  maxWordsPerBlock: 5,
+  /** Max display duration per subtitle block in seconds */
+  maxDisplayDuration: 2.5,
+  /** Silence gap threshold for splitting subtitle blocks (seconds) */
+  silenceGapThreshold: 0.7,
+} as const;
+
 // ─── Segment Duration Constraints ───────────────────────────────────────────
 
 export const SEGMENT_CONSTRAINTS = {
   /** Absolute minimum duration in seconds — never generate clips shorter */
-  absoluteMinDuration: 8,
-  /** How close segments should be to the target duration (as fraction) */
-  targetFraction: 1,
+  absoluteMinDuration: 10,
+  /** Soft maximum duration in seconds — AI can go up to this */
+  softMaxDuration: 70,
   /** Audio safety buffer added after segment end (seconds) */
-  audioBufferAfter: 1,
+  audioBufferAfter: 0.65,
   /** Audio safety buffer added before segment start (seconds) */
-  audioBufferBefore: 1,
-  /** Silence gap threshold for splitting segments (seconds) */
+  audioBufferBefore: 0.65,
+  /** Silence gap threshold for segment boundary snapping (seconds) */
   silenceGapThreshold: 1,
 } as const;

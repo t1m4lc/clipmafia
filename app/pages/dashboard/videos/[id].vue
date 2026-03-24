@@ -52,7 +52,6 @@ async function handleDelete() {
   }
 }
 
-const selectedDuration = ref<DurationOption>(30)
 const generating = ref(false)
 const errorMessage = ref('')
 const batchDownloading = ref(false)
@@ -60,12 +59,6 @@ const sortMode = ref<'score' | 'chronological'>('score')
 const thumbnailUrls = ref<Record<string, string>>({})
 
 const devSelectedSegments = ref<Segment[]>([])
-
-const durationOptions: { label: string; value: DurationOption; desc: string }[] = [
-  { label: '≤ 15s', value: 15, desc: 'Ultra-short' },
-  { label: '≤ 30s', value: 30, desc: 'Short' },
-  { label: '≤ 60s', value: 60, desc: 'Standard' },
-]
 
 const previewUrl = ref('')
 const previewTitle = ref('')
@@ -123,11 +116,6 @@ onMounted(async () => {
   await fetchJob(videoId)
   await fetchShorts(videoId, sortMode.value)
 
-  // Initialize duration selector from the last job so regeneration uses same duration
-  if (currentJob.value?.duration_option) {
-    selectedDuration.value = currentJob.value.duration_option
-  }
-
   await preloadThumbnails()
 
   if (currentJob.value && !['completed', 'failed'].includes(currentJob.value.status)) {
@@ -163,7 +151,7 @@ async function confirmGenerate() {
   generating.value = true
   errorMessage.value = ''
   try {
-    await generateShorts(videoId, selectedDuration.value, subtitleSettings.value)
+    await generateShorts(videoId, subtitleSettings.value)
     pollJobStatus(videoId, 2000)
   } catch (e: any) {
     // Let the composable check for LIMIT_REACHED — opens the upgrade dialog
@@ -708,21 +696,9 @@ const subtitlePreviewStyle = computed(() => {
           </CardDescription>
         </CardHeader>
         <CardContent class="space-y-6">
-          <div class="space-y-3">
-            <div class="text-sm font-medium">Target Duration</div>
-            <div class="grid grid-cols-3 gap-2">
-              <button
-                v-for="option in durationOptions"
-                :key="option.value"
-                class="rounded-lg border-2 p-3 text-center transition-colors cursor-pointer"
-                :class="selectedDuration === option.value ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/50'"
-                @click="selectedDuration = option.value"
-              >
-                <div class="text-base sm:text-lg font-bold">{{ option.label }}</div>
-                <div class="hidden sm:block text-xs text-muted-foreground">{{ option.desc }}</div>
-              </button>
-            </div>
-            <p class="text-xs text-muted-foreground mt-1">Generated shorts will never exceed the selected duration.</p>
+          <div class="rounded-lg border border-dashed p-3 flex items-center gap-2 text-sm">
+            <span>✨</span>
+            <span class="text-muted-foreground">AI will automatically detect the best passages and choose the optimal duration for each short (15–90s).</span>
           </div>
 
           <!-- Current subtitle style indicator -->

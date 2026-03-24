@@ -13,17 +13,10 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event);
-  const { videoId, durationOption = 60, subtitleSettings } = body;
+  const { videoId, subtitleSettings } = body;
 
   if (!videoId) {
     throw createError({ statusCode: 400, message: "videoId is required" });
-  }
-
-  if (![15, 30, 60].includes(durationOption)) {
-    throw createError({
-      statusCode: 400,
-      message: "durationOption must be 15, 30, or 60",
-    });
   }
 
   const supabase = useSupabaseAdmin();
@@ -93,7 +86,6 @@ export default defineEventHandler(async (event) => {
       video_id: videoId,
       user_id: user.id,
       status: "queued",
-      duration_option: durationOption,
       progress: 0,
       subtitle_settings: subtitleSettings || null,
       ...carryOverData,
@@ -119,7 +111,6 @@ export default defineEventHandler(async (event) => {
     jobId: job.id,
     videoId,
     userId: user.id,
-    durationOption,
     subtitleSettings,
   });
 

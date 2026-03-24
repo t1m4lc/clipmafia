@@ -155,22 +155,18 @@ export async function processSegment(
   let videoFilter: string;
 
   if (smartFraming) {
-    // Scale so the *smaller* dimension matches the target, then pad if
-    // the source is too small on the other axis, then center-crop.
+    // 1. Scale so BOTH dimensions are >= target (fills the frame), keep aspect ratio,
+    //    and ensure even dimensions (required by libx264).
+    // 2. Center-crop to exact target dimensions — no pad needed.
     videoFilter = [
-      // Scale preserving aspect ratio so at least one axis matches
-      `scale=w='if(gt(iw/ih,${width}/${height}),${height}*iw/ih,${width})':h='if(gt(iw/ih,${width}/${height}),${height},${width}*ih/iw)'`,
-      // Pad to ensure minimum target dimensions (handles undersized sources)
-      `pad=w='max(iw,${width})':h='max(ih,${height})':x=(ow-iw)/2:y=(oh-ih)/2:color=black`,
-      // Center-crop to exact target
-      `crop=${width}:${height}:(iw-${width})/2:(ih-${height})/2`,
+      `scale=${width}:${height}:force_original_aspect_ratio=increase:force_divisible_by=2`,
+      `crop=${width}:${height}`,
       "setsar=1",
     ].join(",");
   } else {
     videoFilter = [
-      `scale=${width}:-2`,
+      `scale=${width}:${height}:force_original_aspect_ratio=decrease:force_divisible_by=2`,
       `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`,
-      `crop=${width}:${height}`,
       "setsar=1",
     ].join(",");
   }

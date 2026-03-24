@@ -6,7 +6,6 @@ interface QueueJob {
   jobId: string;
   videoId: string;
   userId: string;
-  durationOption: 15 | 30 | 60;
   subtitleSettings?: any;
   addedAt: Date;
   status: "pending" | "running" | "done" | "error";
@@ -52,7 +51,6 @@ class JobQueue {
         nextJob.jobId,
         nextJob.videoId,
         nextJob.userId,
-        nextJob.durationOption,
         nextJob.subtitleSettings,
       );
       nextJob.status = "done";

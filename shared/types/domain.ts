@@ -50,4 +50,9 @@ export type SubscriptionStatus =
   | "past_due"
   | "trialing";
 
-export type DurationOption = 15 | 30 | 60;
+/**
+ * Maximum duration in seconds for generated shorts.
+ * The AI chooses the natural duration for each passage;
+ * this value acts as an upper bound.
+ */
+export type DurationOption = number;

@@ -173,17 +173,16 @@ export function useVideos() {
 
   /**
    * Start processing a video — creates a job and triggers the pipeline.
+   * Duration is now determined automatically by the AI.
    */
   async function generateShorts(
     videoId: string,
-    durationOption: 15 | 30 | 60,
     subtitleSettings?: SubtitleSettings,
   ) {
     const response = await $fetch("/api/process/start", {
       method: "POST",
       body: {
         videoId,
-        durationOption,
         subtitleSettings,
       },
     });
