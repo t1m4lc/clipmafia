@@ -1,5 +1,3 @@
-import { serverSupabaseUser } from "#supabase/server";
-
 /**
  * POST /api/videos/upload
  *
@@ -21,10 +19,7 @@ import { serverSupabaseUser } from "#supabase/server";
  */
 export default defineEventHandler(async (event) => {
   // ── Auth ───────────────────────────────────────────────────────────────────
-  const user = await serverSupabaseUser(event);
-  if (!user) {
-    throw createError({ statusCode: 401, message: "Unauthorized" });
-  }
+  const user = await requireUser(event);
 
   // ── Validate body ─────────────────────────────────────────────────────────
   const body = await readBody(event);

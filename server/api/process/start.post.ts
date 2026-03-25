@@ -1,5 +1,3 @@
-import { serverSupabaseUser } from "#supabase/server";
-
 /**
  * POST /api/process/start
  * Starts the video processing pipeline.
@@ -7,10 +5,7 @@ import { serverSupabaseUser } from "#supabase/server";
  */
 export default defineEventHandler(async (event) => {
   // Authenticate user
-  const user = await serverSupabaseUser(event);
-  if (!user) {
-    throw createError({ statusCode: 401, message: "Unauthorized" });
-  }
+  const user = await requireUser(event);
 
   const body = await readBody(event);
   const { videoId, subtitleSettings } = body;

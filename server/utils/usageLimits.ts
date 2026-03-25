@@ -137,6 +137,20 @@ export async function incrementUploadCount(userId: string): Promise<void> {
     .maybeSingle()) as {
     data: Pick<Tables<"monthly_usage">, "id" | "uploads_count"> | null;
   };
+
+  if (existing) {
+    await (supabase as any)
+      .from("monthly_usage")
+      .update({ uploads_count: existing.uploads_count + 1 })
+      .eq("id", existing.id);
+  } else {
+    await (supabase as any).from("monthly_usage").insert({
+      user_id: userId,
+      month: currentMonth,
+      uploads_count: 1,
+      generations_count: 0,
+    });
+  }
 }
 
 /**

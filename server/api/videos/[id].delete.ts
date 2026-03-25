@@ -1,4 +1,3 @@
-import { serverSupabaseUser } from "#supabase/server";
 import type { Tables } from "#shared/types/database.types";
 
 type VideoRow = Tables<"videos">;
@@ -11,10 +10,7 @@ type JobId = Pick<Tables<"jobs">, "id">;
  * The DB deletion cascades to jobs + shorts rows via FK constraints.
  */
 export default defineEventHandler(async (event) => {
-  const user = await serverSupabaseUser(event);
-  if (!user) {
-    throw createError({ statusCode: 401, message: "Unauthorized" });
-  }
+  const user = await requireUser(event);
 
   const videoId = getRouterParam(event, "id");
   if (!videoId) {

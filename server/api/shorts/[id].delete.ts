@@ -1,14 +1,10 @@
-import { serverSupabaseUser } from "#supabase/server";
 
 /**
  * DELETE /api/shorts/:id
  * Deletes a single generated short (storage file + DB record).
  */
 export default defineEventHandler(async (event) => {
-  const user = await serverSupabaseUser(event);
-  if (!user) {
-    throw createError({ statusCode: 401, message: "Unauthorized" });
-  }
+  const user = await requireUser(event);
 
   const shortId = getRouterParam(event, "id");
   if (!shortId) {

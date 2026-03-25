@@ -1,14 +1,10 @@
-import { serverSupabaseUser } from "#supabase/server";
 
 /**
  * POST /api/stripe/checkout
  * Creates a Stripe Checkout session for subscription.
  */
 export default defineEventHandler(async (event) => {
-  const user = await serverSupabaseUser(event);
-  if (!user) {
-    throw createError({ statusCode: 401, message: "Unauthorized" });
-  }
+  const user = await requireUser(event);
 
   const body = await readBody(event);
   const { plan } = body;

@@ -1,4 +1,3 @@
-import { serverSupabaseUser } from "#supabase/server";
 
 /**
  * GET /api/shorts/:id
@@ -7,10 +6,7 @@ import { serverSupabaseUser } from "#supabase/server";
  * and the service-role key is needed for createSignedUrl.
  */
 export default defineEventHandler(async (event) => {
-  const user = await serverSupabaseUser(event);
-  if (!user) {
-    throw createError({ statusCode: 401, message: "Unauthorized" });
-  }
+  const user = await requireUser(event);
 
   const shortId = getRouterParam(event, "id");
   if (!shortId) {
