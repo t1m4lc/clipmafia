@@ -239,7 +239,10 @@ export async function processVideoJob(
       steps.detecting_segments = "loading";
       await updateJobStatus(jobId, "detecting_segments", 40, { steps });
 
-      segments = await detectSegments(transcript!, metadata.duration);
+      // segments = await detectSegments(transcript!, metadata.duration);
+
+      const openAISegments = await detectSegmentsOpenAI(transcript!);
+      segments = openAISegmentsToStandard(openAISegments);
 
       // Save segments to job
       steps.detecting_segments = "done";

@@ -24,6 +24,7 @@ export default defineNuxtConfig({
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
     deepgramApiKey: process.env.DEEPGRAM_API_KEY || "",
     mistralApiKey: process.env.MISTRAL_API_KEY || "",
+    openaiApiKey: process.env.OPENAI_API_KEY || "",
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
     // Bypass — skip all Stripe/quota checks
     bypassPayment: process.env.BYPASS_PAYMENT === "true",

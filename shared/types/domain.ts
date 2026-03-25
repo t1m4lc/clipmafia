@@ -56,3 +56,9 @@ export type SubscriptionStatus =
  * this value acts as an upper bound.
  */
 export type DurationOption = number;
+
+/**
+ * Duration filter options for the shorts display.
+ * "all" shows every segment regardless of duration.
+ */
+export type DurationFilter = "7-15" | "15-30" | "30-60" | "all";

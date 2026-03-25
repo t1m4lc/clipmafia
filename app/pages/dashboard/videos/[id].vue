@@ -59,7 +59,25 @@ const sortMode = ref<'score' | 'chronological'>('score')
 const thumbnailUrls = ref<Record<string, string>>({})
 
 const devSelectedSegments = ref<Segment[]>([])
+const durationFilter = ref<'7-15' | '15-30' | '30-60' | 'all'>('all')
 
+const filteredShorts = computed(() => {
+  if (durationFilter.value === 'all') return shorts.value
+  const [minStr, maxStr] = durationFilter.value.split('-')
+  const min = Number(minStr)
+  const max = Number(maxStr)
+  return shorts.value.filter((s) => {
+    const dur = s.duration ?? (s.end_time - s.start_time)
+    return dur >= min && dur <= max
+  })
+})
+
+const durationOptions = [
+  { value: 'all' as const, label: 'All' },
+  { value: '7-15' as const, label: '7–15s' },
+  { value: '15-30' as const, label: '15–30s' },
+  { value: '30-60' as const, label: '30–60s' },
+] as const
 const previewUrl = ref('')
 const previewTitle = ref('')
 const showPreview = ref(false)
@@ -445,6 +463,18 @@ const subtitlePreviewStyle = computed(() => {
             </h2>
           </div>
           <div class="flex items-center gap-2">
+            <!-- Duration filter buttons -->
+            <div class="flex items-center gap-1 rounded-lg bg-muted p-1">
+              <button
+                v-for="opt in durationOptions"
+                :key="opt.value"
+                class="px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer"
+                :class="durationFilter === opt.value ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+                @click="durationFilter = opt.value"
+              >
+                {{ opt.label }}
+              </button>
+            </div>
             <button
               class="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground cursor-pointer px-2 py-1 rounded-md hover:bg-muted transition-colors"
               @click="sortMode = sortMode === 'score' ? 'chronological' : 'score'"
@@ -455,17 +485,23 @@ const subtitlePreviewStyle = computed(() => {
           </div>
         </div>
 
+        <!-- No results for current filter -->
+        <div v-if="filteredShorts.length === 0 && shorts.length > 0" class="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+          <p>No shorts match the <strong>{{ durationFilter }}</strong> duration filter.</p>
+          <button class="mt-2 text-sm text-primary hover:underline cursor-pointer" @click="durationFilter = 'all'">Show all shorts</button>
+        </div>
+
         <!-- Batch Download Button — always visible when shorts exist -->
         <div class="flex flex-wrap gap-3">
           <Button size="lg" @click="handleBatchDownload" :disabled="batchDownloading" class="gap-2">
             <Download class="size-4" />
-            {{ batchDownloading ? 'Downloading...' : `Download All ${shorts.length} Shorts` }}
+            {{ batchDownloading ? 'Downloading...' : `Download All ${filteredShorts.length} Shorts` }}
           </Button>
         </div>
 
         <!-- Shorts Grid — vertical story cards -->
         <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          <Card v-for="short in shorts" :key="short.id" class="group relative border-2 hover:border-primary/50 transition-colors">
+          <Card v-for="short in filteredShorts" :key="short.id" class="group relative border-2 hover:border-primary/50 transition-colors">
             <CardContent class="p-0">
               <!-- Vertical Story Preview -->
               <div
@@ -546,7 +582,7 @@ const subtitlePreviewStyle = computed(() => {
         <div class="flex justify-center pt-2">
           <Button variant="outline" size="lg" @click="handleBatchDownload" :disabled="batchDownloading" class="gap-2">
             <Download class="size-4" />
-            {{ batchDownloading ? 'Downloading...' : `Download All ${shorts.length} Shorts` }}
+            {{ batchDownloading ? 'Downloading...' : `Download All ${filteredShorts.length} Shorts` }}
           </Button>
         </div>
       </div>
