@@ -125,6 +125,7 @@ export function useProfile() {
 
   const monthlyUsage = ref<{
     uploads_count: number;
+    youtube_links_count: number;
   } | null>(null);
 
   function getCurrentMonth(): string {
@@ -140,11 +141,11 @@ export function useProfile() {
     if (!user.value) return;
     const { data } = await supabase
       .from("monthly_usage")
-      .select("uploads_count")
+      .select("uploads_count, youtube_links_count")
       .eq("user_id", user.value.id)
       .eq("month", getCurrentMonth())
       .maybeSingle();
-    monthlyUsage.value = data ?? { uploads_count: 0 };
+    monthlyUsage.value = data ?? { uploads_count: 0, youtube_links_count: 0 };
   }
 
   /**
@@ -155,13 +156,30 @@ export function useProfile() {
     const plan = effectivePlan();
     const limits = planLimits(plan);
     const uploadsUsed = monthlyUsage.value?.uploads_count ?? 0;
+    const youtubeLinksUsed = monthlyUsage.value?.youtube_links_count ?? 0;
     const uploadsAtLimit = uploadsUsed >= limits.videoUploadsPerMonth;
+    const youtubeAtLimit = youtubeLinksUsed >= limits.youtubeLinksPerMonth;
     return {
       uploadsUsed,
       uploadsLimit: limits.videoUploadsPerMonth,
       uploadsAtLimit,
-      atLimit: uploadsAtLimit,
+      youtubeLinksUsed,
+      youtubeLinksLimit: limits.youtubeLinksPerMonth,
+      youtubeAtLimit,
+      atLimit: uploadsAtLimit && youtubeAtLimit,
     };
+  }
+
+  /**
+   * Whether the current user can upload files (paid plan or has credits).
+   */
+  function canUploadFiles(): boolean {
+    const config = useRuntimeConfig();
+    if (config.public.bypassPayment) return true;
+    const plan = effectivePlan();
+    if (plan !== "free") return true;
+    // Free users can still upload if they have credits
+    return (profile.value?.upload_credits ?? 0) > 0;
   }
 
   return {
@@ -170,6 +188,7 @@ export function useProfile() {
     fetchProfile,
     effectivePlan,
     canProcessVideo,
+    canUploadFiles,
     remainingQuota,
     getUploadLimit,
     getUploadLimitInfo,

@@ -53,14 +53,14 @@ watch(
           </h1>
 
           <p class="mx-auto max-w-2xl text-lg text-muted-foreground">
-            Upload a horizontal video. Get vertical shorts with subtitles and smart framing.
-            Perfect for YouTube Shorts, Instagram Reels, and TikTok.
+            Paste a YouTube link. AI finds the most viral moments in seconds.
+            Upgrade to upload your own videos with subtitles and smart framing.
           </p>
 
           <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
             <NuxtLink to="/register">
               <Button size="lg" class="text-lg px-8 py-6">
-                🚀 Upload Your First Video
+                🚀 Try it Free — Paste a YouTube Link
               </Button>
             </NuxtLink>
           </div>
@@ -79,11 +79,11 @@ watch(
         <div class="grid gap-8 md:grid-cols-3 max-w-5xl mx-auto">
           <div class="text-center space-y-4">
             <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-3xl">
-              📤
+              �
             </div>
-            <h3 class="text-xl font-semibold">1. Upload</h3>
+            <h3 class="text-xl font-semibold">1. Paste a Link</h3>
             <p class="text-muted-foreground">
-              Upload your horizontal video. We support all major formats (MP4, MOV, AVI, etc.)
+              Paste any public YouTube video link. No upload, no file, no waiting.
             </p>
           </div>
 
@@ -93,7 +93,7 @@ watch(
             </div>
             <h3 class="text-xl font-semibold">2. AI Processing</h3>
             <p class="text-muted-foreground">
-              Our AI detects the best moments, crops to vertical format with smart framing, and adds subtitles.
+              Our AI analyzes the transcript and detects the best moments — the ones most likely to go viral.
             </p>
           </div>
 
@@ -101,9 +101,9 @@ watch(
             <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-3xl">
               📲
             </div>
-            <h3 class="text-xl font-semibold">3. Download</h3>
+            <h3 class="text-xl font-semibold">3. Share</h3>
             <p class="text-muted-foreground">
-              Download your perfectly formatted shorts ready for YouTube, Instagram, and TikTok.
+              Get timestamped clips ready to share. Upgrade to upload files for full vertical rendering with subtitles.
             </p>
           </div>
         </div>
@@ -115,7 +115,7 @@ watch(
       <div class="container mx-auto px-4">
         <div class="text-center mb-16">
           <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">See It In Action</h2>
-          <p class="mt-4 text-lg text-muted-foreground">From horizontal to vertical in seconds</p>
+          <p class="mt-4 text-lg text-muted-foreground">From YouTube link to viral highlights in seconds</p>
         </div>
 
         <div class="flex flex-col md:flex-row items-center justify-center gap-12 max-w-4xl mx-auto">
@@ -124,9 +124,9 @@ watch(
             <p class="text-sm font-medium text-muted-foreground uppercase tracking-wider">Before</p>
             <div class="relative aspect-video w-72 rounded-xl bg-muted border-2 border-dashed flex items-center justify-center shadow-sm">
               <div class="text-center space-y-2">
-                <span class="text-4xl">🎥</span>
-                <p class="text-sm text-muted-foreground">1 × Horizontal Video</p>
-                <p class="text-xs text-muted-foreground/60">16:9 · MP4 / MOV</p>
+                <span class="text-4xl">🔗</span>
+                <p class="text-sm text-muted-foreground">1 × YouTube Link</p>
+                <p class="text-xs text-muted-foreground/60">Any public video</p>
               </div>
             </div>
           </div>
@@ -184,7 +184,7 @@ watch(
                 ∞
               </div>
             </div>
-            <p class="text-xs text-muted-foreground">Generate multiple shorts from one upload</p>
+            <p class="text-xs text-muted-foreground">Multiple viral clips from one link</p>
           </div>
         </div>
       </div>

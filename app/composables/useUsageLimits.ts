@@ -9,7 +9,7 @@
 export interface LimitReachedPayload {
   allowed: false;
   reason: "LIMIT_REACHED";
-  type: "UPLOAD" | "GENERATION";
+  type: "UPLOAD" | "GENERATION" | "YOUTUBE_LINK";
   limit: number;
   used: number;
   resetDate: string;

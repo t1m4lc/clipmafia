@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, MoreVertical, Play, Download, Trash2, ArrowDownUp, Settings, LayoutGrid, List, X } from 'lucide-vue-next'
+import { Check, MoreVertical, Play, Download, Trash2, ArrowDownUp, Settings, LayoutGrid, List, X, ExternalLink, Link } from 'lucide-vue-next'
 
 definePageMeta({
   layout: 'dashboard',
@@ -31,8 +31,21 @@ const {
 } = useVideos()
 
 const { settings: subtitleSettings } = useSubtitleSettings()
+const { showUpgradeDialog, limitPayload, handleLimitError } = useUsageLimits()
 
 const router = useRouter()
+
+// ── Source detection ───────────────────────────────────────────────────────
+const isYoutube = computed(() => currentVideo.value?.source === 'youtube')
+const youtubeVideoId = computed(() => {
+  const meta = currentVideo.value?.youtube_metadata as any
+  return meta?.videoId || null
+})
+const youtubeEmbedUrl = computed(() => youtubeVideoId.value ? `https://www.youtube.com/embed/${youtubeVideoId.value}` : '')
+const youtubeWatchUrl = computed(() => youtubeVideoId.value ? `https://www.youtube.com/watch?v=${youtubeVideoId.value}` : '')
+function youtubeTimestampUrl(startSec: number): string {
+  return `${youtubeWatchUrl.value}&t=${Math.floor(startSec)}s`
+}
 const deleting = ref(false)
 const showDeleteDialog = ref(false)
 
@@ -88,6 +101,9 @@ const loadingOriginalVideo = ref(false)
 const inlinePlayerRef = ref<HTMLVideoElement | null>(null)
 const activeSegmentEnd = ref<number | null>(null)
 const activeSegmentIndex = ref<number | null>(null)
+
+// Confetti / referral modal state
+const showSuccessModal = ref(false)
 
 async function loadOriginalVideo() {
   if (!currentVideo.value || originalVideoUrl.value) return
@@ -161,6 +177,12 @@ watch(
       if (status === 'completed') {
         await fetchShorts(videoId, sortMode.value)
         await preloadThumbnails()
+        // Show confetti modal on first-ever generation (localStorage check)
+        const confettiKey = `clipmafia_confetti_${videoId}`
+        if (!localStorage.getItem(confettiKey)) {
+          localStorage.setItem(confettiKey, '1')
+          showSuccessModal.value = true
+        }
       }
     }
   },
@@ -204,6 +226,7 @@ async function confirmGenerate() {
     await generateShorts(videoId, subtitleSettings.value)
     pollJobStatus(videoId, 2000)
   } catch (e: any) {
+    if (handleLimitError(e)) return
     errorMessage.value = e?.data?.message || e.message || 'Failed to start processing'
     generating.value = false
   }
@@ -349,12 +372,18 @@ interface StepDef {
   description: string
 }
 
-const stepDefinitions: StepDef[] = [
+const uploadStepDefinitions: StepDef[] = [
   { step: 1, key: 'extracting_audio', title: 'Extract Audio', description: 'Extracting audio track' },
   { step: 2, key: 'transcribing', title: 'Transcribe', description: 'Speech-to-text via Deepgram' },
   { step: 3, key: 'detecting_segments', title: 'Detect Segments', description: 'AI finding best moments' },
   { step: 4, key: 'processing_video', title: 'Create Shorts', description: 'Cropping, subtitles & upload' },
 ]
+
+const youtubeStepDefinitions: StepDef[] = [
+  { step: 1, key: 'detecting_segments', title: 'Detect Segments', description: 'AI analyzing transcript for best moments' },
+]
+
+const stepDefinitions = computed(() => isYoutube.value ? youtubeStepDefinitions : uploadStepDefinitions)
 
 const CREATING_STEPS = ['processing_video', 'burning_subtitles', 'uploading']
 
@@ -376,7 +405,7 @@ function getStepState(stepKey: string): 'completed' | 'active' | 'inactive' | 'e
   if (!currentJob.value) return 'inactive'
   const status = currentJob.value.status
   const displayStatus = toDisplayKey(status)
-  const stepOrder = stepDefinitions.map(s => s.key)
+  const stepOrder = stepDefinitions.value.map(s => s.key)
   const currentIdx = stepOrder.indexOf(displayStatus)
   const stepIdx   = stepOrder.indexOf(stepKey)
 
@@ -397,9 +426,9 @@ const generateButtonLabel = computed(() => {
     return '\u{1F680} Generate Shorts'
   }
   const failedStep = toDisplayKey(currentJob.value.failed_at_step || '')
-  const stepDef = stepDefinitions.find(s => s.key === failedStep)
+  const stepDef = stepDefinitions.value.find(s => s.key === failedStep)
   if (stepDef) {
-    const cachedCount = stepDefinitions.filter(s => getStepState(s.key) === 'completed').length
+    const cachedCount = stepDefinitions.value.filter(s => getStepState(s.key) === 'completed').length
     if (cachedCount > 0) {
       return '\u{1F504} Retry from "' + stepDef.title + '" (' + cachedCount + ' steps cached)'
     }
@@ -560,8 +589,18 @@ async function seekToSegment(segment: Segment) {
               {{ currentVideo.created_at ? new Date(currentVideo.created_at).toLocaleDateString() : '' }}<span v-if="currentVideo.duration"> · {{ formatDuration(currentVideo.duration) }}</span>
             </p>
 
-            <!-- Filename -->
-            <p class="text-xs text-muted-foreground/60 font-mono truncate">{{ currentVideo.original_filename }}</p>
+            <!-- Source badge -->
+            <div v-if="isYoutube" class="flex items-center gap-2">
+              <span class="inline-flex items-center gap-1 rounded-full bg-red-500/10 border border-red-500/20 px-2 py-0.5 text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wide">
+                <Link class="size-2.5" /> YouTube
+              </span>
+              <a :href="youtubeWatchUrl" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                <ExternalLink class="size-3" /> Watch on YouTube
+              </a>
+            </div>
+
+            <!-- Filename (upload only) -->
+            <p v-if="!isYoutube" class="text-xs text-muted-foreground/60 font-mono truncate">{{ currentVideo.original_filename }}</p>
           </div>
 
           <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0" @click="showDeleteDialog = true">
@@ -576,14 +615,15 @@ async function seekToSegment(segment: Segment) {
         <!-- Header row -->
         <div class="flex flex-col gap-3">
           <div class="flex items-center flex-col sm:flex-row justify-between gap-2">
-            <h2 class="text-xl font-bold flex items-center gap-2">✨ Generated Shorts <span class="text-base font-normal text-muted-foreground">({{ shorts.length }})</span></h2>
-                    <!-- Batch Download -->
-        <Button variant="outline" class="w-full sm:w-auto gap-2" @click="handleBatchDownload" :disabled="batchDownloading">
-          <Download class="size-4" />
-          {{ batchDownloading ? 'Downloading...' : `Download All Shorts` }}
-        </Button>
-
-
+            <h2 class="text-xl font-bold flex items-center gap-2">
+              {{ isYoutube ? '🎯 Detected Clips' : '✨ Generated Shorts' }}
+              <span class="text-base font-normal text-muted-foreground">({{ shorts.length }})</span>
+            </h2>
+            <!-- Batch Download (upload only) -->
+            <Button v-if="!isYoutube" variant="outline" class="w-full sm:w-auto gap-2" @click="handleBatchDownload" :disabled="batchDownloading">
+              <Download class="size-4" />
+              {{ batchDownloading ? 'Downloading...' : `Download All Shorts` }}
+            </Button>
           </div>
           
           <!-- Filters row -->
@@ -720,36 +760,46 @@ async function seekToSegment(segment: Segment) {
             <!-- Info -->
             <div class="flex-1 min-w-0">
               <h3 class="font-medium text-sm leading-snug line-clamp-2">{{ short.title }}</h3>
-              <p class="text-xs text-muted-foreground mt-0.5">{{ short.width }}&times;{{ short.height }}</p>
+              <p v-if="!isYoutube" class="text-xs text-muted-foreground mt-0.5">{{ short.width }}&times;{{ short.height }}</p>
+              <p v-else class="text-xs text-muted-foreground mt-0.5">{{ formatDuration(short.start_time) }} → {{ formatDuration(short.end_time) }}</p>
             </div>
 
-            <!-- Actions: Preview button + kebab menu -->
+            <!-- Actions: YouTube clips = Open in YouTube; Upload shorts = Preview + Download -->
             <div class="flex items-center gap-1 shrink-0" @click.stop>
-              <Button variant="outline" size="sm" class="hidden sm:flex h-9 px-3 text-xs gap-1.5" @click="handlePlayShort(short.id, short.title)">
-                <Play class="size-3.5" /> Preview
-              </Button>
-              <div class="relative">
-                <button class="p-2 rounded-lg hover:bg-muted cursor-pointer" @click="toggleMenu(short.id)">
-                  <MoreVertical class="size-4 text-muted-foreground" />
-                </button>
-                <div v-if="activeMenuShortId === short.id" class="absolute right-0 top-10 z-50 min-w-[150px] rounded-md border bg-popover p-1 shadow-md">
-                           <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm hover:bg-accent cursor-pointer" @click="handlePlayShort(short.id, short.title)">
-                    <Play class="size-4" /> Preview
+              <template v-if="isYoutube">
+                <a :href="youtubeTimestampUrl(short.start_time)" target="_blank" rel="noopener">
+                  <Button variant="outline" size="sm" class="h-9 px-3 text-xs gap-1.5">
+                    <ExternalLink class="size-3.5" /> Open in YouTube
+                  </Button>
+                </a>
+              </template>
+              <template v-else>
+                <Button variant="outline" size="sm" class="hidden sm:flex h-9 px-3 text-xs gap-1.5" @click="handlePlayShort(short.id, short.title)">
+                  <Play class="size-3.5" /> Preview
+                </Button>
+                <div class="relative">
+                  <button class="p-2 rounded-lg hover:bg-muted cursor-pointer" @click="toggleMenu(short.id)">
+                    <MoreVertical class="size-4 text-muted-foreground" />
                   </button>
-                  <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm hover:bg-accent cursor-pointer" @click="handleDownload(short.id, short.title); activeMenuShortId = null">
-                    <Download class="size-4" /> Download
-                  </button>
-                  <hr class="my-1 border-border" />
-                  <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 cursor-pointer" @click="handleDeleteShort(short.id); activeMenuShortId = null">
-                    <Trash2 class="size-4" /> Delete
-                  </button>
+                  <div v-if="activeMenuShortId === short.id" class="absolute right-0 top-10 z-50 min-w-[150px] rounded-md border bg-popover p-1 shadow-md">
+                    <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm hover:bg-accent cursor-pointer" @click="handlePlayShort(short.id, short.title)">
+                      <Play class="size-4" /> Preview
+                    </button>
+                    <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm hover:bg-accent cursor-pointer" @click="handleDownload(short.id, short.title); activeMenuShortId = null">
+                      <Download class="size-4" /> Download
+                    </button>
+                    <hr class="my-1 border-border" />
+                    <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 cursor-pointer" @click="handleDeleteShort(short.id); activeMenuShortId = null">
+                      <Trash2 class="size-4" /> Delete
+                    </button>
+                  </div>
                 </div>
-              </div>
+              </template>
             </div>
           </div>
         </div>
 
-        <div class="text-center py-6">
+        <div v-if="!isYoutube" class="text-center py-6">
                                       <!-- Batch Download -->
         <Button variant="secondary" class="w-full sm:w-auto gap-2" @click="handleBatchDownload" :disabled="batchDownloading">
           <Download class="size-4" />
@@ -766,7 +816,7 @@ async function seekToSegment(segment: Segment) {
             🎯 Detected Segments
             <span class="text-sm font-normal text-muted-foreground">({{ segments.length }})</span>
           </h3>
-          <span v-if="loadingOriginalVideo" class="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <span v-if="!isYoutube && loadingOriginalVideo" class="inline-flex items-center gap-1 text-xs text-muted-foreground">
             <svg class="size-3 animate-spin" viewBox="0 0 24 24" fill="none">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
               <path class="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
@@ -775,7 +825,18 @@ async function seekToSegment(segment: Segment) {
           </span>
         </div>
 
-        <!-- Inline video player (no dialog) -->
+        <!-- YouTube embed player -->
+        <div v-if="isYoutube && youtubeVideoId" class="rounded-xl overflow-hidden bg-black shadow-lg">
+          <iframe
+            :src="`${youtubeEmbedUrl}?enablejsapi=1`"
+            class="w-full aspect-video"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowfullscreen
+          />
+        </div>
+
+        <!-- Inline upload video player (no dialog) -->
+        <template v-if="!isYoutube">
         <!-- Skeleton while the signed URL is being fetched -->
         <Skeleton v-if="loadingOriginalVideo && !originalVideoUrl" class="w-full aspect-video rounded-xl" />
         <div v-else-if="originalVideoUrl" class="rounded-xl overflow-hidden bg-black shadow-lg">
@@ -788,6 +849,7 @@ async function seekToSegment(segment: Segment) {
             class="w-full aspect-video object-contain"
           />
         </div>
+        </template>
 
         <!-- Visual timeline bar (two layers: clipped bars + free-floating tooltips) -->
         <div class="relative h-10 my-1">
@@ -835,14 +897,18 @@ async function seekToSegment(segment: Segment) {
 
         <!-- Segment pills (scrollable on mobile) -->
         <div class="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 snap-x">
-          <button
+          <component
+            :is="isYoutube ? 'a' : 'button'"
             v-for="(seg, i) in segments"
             :key="i"
+            :href="isYoutube ? youtubeTimestampUrl(seg.start) : undefined"
+            :target="isYoutube ? '_blank' : undefined"
+            :rel="isYoutube ? 'noopener' : undefined"
             class="inline-flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border cursor-pointer transition-all shrink-0 snap-start active:scale-95"
             :class="activeSegmentIndex === i
               ? 'bg-red-500/10 border-red-500/50 text-red-600 dark:text-red-400 font-medium'
               : 'hover:bg-accent'"
-            @click="seekToSegment(seg)"
+            @click="!isYoutube && seekToSegment(seg)"
           >
             <span
               class="inline-block w-2 h-2 rounded-full shrink-0 transition-colors"
@@ -852,7 +918,7 @@ async function seekToSegment(segment: Segment) {
             />
             <span class="truncate max-w-[100px]">{{ seg.title }}</span>
             <span class="font-mono transition-colors" :class="activeSegmentIndex === i ? 'text-red-500/70' : 'text-muted-foreground'">{{ formatDuration(seg.start) }}</span>
-          </button>
+          </component>
         </div>
       </div>
 
@@ -920,11 +986,16 @@ async function seekToSegment(segment: Segment) {
       <!-- ═══════════════ GENERATE / RETRY ═══════════════ -->
       <Card v-if="showGenerateSection">
         <CardHeader class="pb-3">
-          <CardTitle>{{ currentJob?.status === 'failed' ? '🔄 Retry Generation' : '🚀 Generate Shorts' }}</CardTitle>
-          <CardDescription>Let AI find the best moments and create vertical shorts automatically.</CardDescription>
+          <CardTitle>{{ currentJob?.status === 'failed' ? '🔄 Retry Generation' : isYoutube ? '🎯 Detect Viral Moments' : '🚀 Generate Shorts' }}</CardTitle>
+          <CardDescription>
+            {{ isYoutube
+              ? 'AI will analyze the transcript and find the most viral moments — timestamps ready to share.'
+              : 'Let AI find the best moments and create vertical shorts automatically.' }}
+          </CardDescription>
         </CardHeader>
         <CardContent class="space-y-5">
-          <div class="rounded-lg border border-dashed p-3 flex items-center justify-between gap-3">
+          <!-- Subtitle settings (upload only) -->
+          <div v-if="!isYoutube" class="rounded-lg border border-dashed p-3 flex items-center justify-between gap-3">
             <div class="flex items-center gap-2 text-sm">
               <span>🎨</span>
               <span class="text-muted-foreground">Subtitle style:</span>
@@ -1052,6 +1123,22 @@ async function seekToSegment(segment: Segment) {
           </div>
         </Transition>
       </Teleport>
+
+    <!-- ═══════════════ CONFETTI + REFERRAL MODAL ═══════════════ -->
+    <ClipGenerationSuccess
+      v-model:open="showSuccessModal"
+      :clip-count="shorts.length"
+      :video-title="currentVideo?.title || 'your video'"
+    />
+
+    <!-- ═══════════════ UPGRADE DIALOG ═══════════════ -->
+    <UpgradeDialog
+      v-model:open="showUpgradeDialog"
+      :type="limitPayload.type"
+      :used="limitPayload.used"
+      :limit="limitPayload.limit"
+      :reset-date="limitPayload.resetDate"
+    />
     </template>
 
   </div>

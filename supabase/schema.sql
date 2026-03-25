@@ -20,6 +20,8 @@ CREATE TABLE public.profiles (
   subscription_plan TEXT DEFAULT 'free' CHECK (subscription_plan IN ('free', 'pro', 'business')),
   monthly_video_limit INTEGER DEFAULT 3,
   videos_processed_this_month INTEGER DEFAULT 0,
+  upload_credits INTEGER DEFAULT 0 NOT NULL,
+  referral_code TEXT UNIQUE,
   billing_cycle_start TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -33,8 +35,11 @@ CREATE TABLE public.videos (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
   title TEXT NOT NULL,
-  original_filename TEXT NOT NULL,
-  storage_path TEXT NOT NULL,
+  original_filename TEXT,
+  storage_path TEXT,
+  source TEXT DEFAULT 'upload' CHECK (source IN ('youtube', 'upload')),
+  source_url TEXT,
+  youtube_metadata JSONB,
   duration REAL,
   width INTEGER,
   height INTEGER,
@@ -42,7 +47,7 @@ CREATE TABLE public.videos (
   mime_type TEXT,
   thumbnail_path TEXT,
   transcript JSONB,
-  status TEXT DEFAULT 'uploaded' CHECK (status IN ('uploaded', 'processing', 'completed', 'failed')),
+  status TEXT DEFAULT 'uploaded' CHECK (status IN ('uploaded', 'ready', 'processing', 'completed', 'failed')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -61,6 +66,7 @@ CREATE TABLE public.jobs (
   failed_at_step TEXT,
   steps JSONB DEFAULT '{}',
   subtitle_settings JSONB,
+  clip_mode TEXT DEFAULT 'full_render' CHECK (clip_mode IN ('transcript_only', 'full_render')),
   duration_option INTEGER DEFAULT 60 CHECK (duration_option IN (15, 30, 60)),
   transcript JSONB,
   segments JSONB,
@@ -103,6 +109,7 @@ CREATE TABLE public.monthly_usage (
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
   month TEXT NOT NULL CHECK (month ~ '^\d{4}-\d{2}$'),
   uploads_count INTEGER DEFAULT 0 NOT NULL CHECK (uploads_count >= 0),
+  youtube_links_count INTEGER DEFAULT 0 NOT NULL CHECK (youtube_links_count >= 0),
   generations_count INTEGER DEFAULT 0 NOT NULL CHECK (generations_count >= 0),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -177,6 +184,24 @@ CREATE POLICY "Users can view own usage"
   USING (auth.uid() = user_id);
 
 -- ============================================
+-- REFERRALS TABLE
+-- Tracks user sharing actions for credit rewards
+-- ============================================
+CREATE TABLE public.referrals (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  referrer_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+  platform TEXT NOT NULL CHECK (platform IN ('twitter', 'other')),
+  credited BOOLEAN DEFAULT FALSE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.referrals ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own referrals"
+  ON public.referrals FOR SELECT
+  USING (auth.uid() = referrer_id);
+
+-- ============================================
 -- FUNCTIONS & TRIGGERS
 -- ============================================
 
@@ -184,12 +209,13 @@ CREATE POLICY "Users can view own usage"
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, email, full_name, avatar_url)
+  INSERT INTO public.profiles (id, email, full_name, avatar_url, referral_code)
   VALUES (
     NEW.id,
     NEW.email,
     NEW.raw_user_meta_data->>'full_name',
-    NEW.raw_user_meta_data->>'avatar_url'
+    NEW.raw_user_meta_data->>'avatar_url',
+    LOWER(SUBSTR(MD5(RANDOM()::text || NEW.id::text), 1, 8))
   );
   RETURN NEW;
 END;

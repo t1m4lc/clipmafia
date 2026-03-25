@@ -172,6 +172,18 @@ export function useVideos() {
   }
 
   /**
+   * Submit a YouTube URL for transcript-based processing.
+   * Returns the created video record.
+   */
+  async function submitYoutubeLink(url: string) {
+    const video = await $fetch("/api/videos/youtube", {
+      method: "POST",
+      body: { url },
+    });
+    return video;
+  }
+
+  /**
    * Start processing a video — creates a job and triggers the pipeline.
    * Duration is now determined automatically by the AI.
    */
@@ -453,6 +465,7 @@ export function useVideos() {
     fetchVideos,
     fetchVideo,
     uploadVideo,
+    submitYoutubeLink,
     uploadVideoBatch,
     generateShorts,
     fetchJob,

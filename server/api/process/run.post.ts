@@ -33,9 +33,258 @@ function stepIndex(step: string): number {
 /**
  * Main video processing pipeline.
  * This runs asynchronously in the background via the job queue.
+ *
+ * Two modes based on video source:
+ *   - "transcript_only" (YouTube): skip audio/video processing, use pre-fetched transcript
+ *   - "full_render" (Upload): full pipeline with FFmpeg rendering
+ *
  * Supports resuming from a failed step by reusing cached transcript/segments.
  */
 export async function processVideoJob(
+  jobId: string,
+  videoId: string,
+  userId: string,
+  subtitleSettings?: SubtitleStyle,
+): Promise<void> {
+  const supabase = useSupabaseAdmin();
+
+  // Get job to determine clip_mode
+  const { data: jobRecord } = await supabase
+    .from("jobs")
+    .select("clip_mode")
+    .eq("id", jobId)
+    .single();
+
+  const clipMode = (jobRecord as any)?.clip_mode || "full_render";
+
+  if (clipMode === "transcript_only") {
+    await processYoutubeJob(jobId, videoId, userId);
+  } else {
+    await processUploadJob(jobId, videoId, userId, subtitleSettings);
+  }
+}
+
+/**
+ * YouTube pipeline — transcript-only processing.
+ * Uses pre-fetched transcript → AI segment detection → returns timestamp clips.
+ * NO video download, NO FFmpeg, NO storage. Near-zero infra cost.
+ */
+async function processYoutubeJob(
+  jobId: string,
+  videoId: string,
+  userId: string,
+): Promise<void> {
+  const supabase = useSupabaseAdmin();
+
+  const steps: StepStatuses = {
+    detecting_segments: "pending",
+  };
+
+  async function markStep(step: StepName, state: StepState) {
+    steps[step] = state;
+    await updateJobStatus(jobId, undefined as any, undefined as any, { steps });
+  }
+
+  try {
+    const { data: video } = await supabase
+      .from("videos")
+      .select("*")
+      .eq("id", videoId)
+      .single();
+
+    if (!video) throw new Error("Video not found");
+
+    const v = video as any;
+    let transcript: TranscriptWord[] | null = v.transcript || null;
+    let segments: Segment[] | null = null;
+
+    // Check for cached segments from a previous job
+    const { data: previousJob } = await supabase
+      .from("jobs")
+      .select("segments")
+      .eq("video_id", videoId)
+      .eq("user_id", userId)
+      .neq("id", jobId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if ((previousJob as any)?.segments) {
+      segments = (previousJob as any).segments as Segment[];
+    }
+
+    // ── Fetch transcript if not already stored ───────────────────────────
+    if (!transcript || transcript.length === 0) {
+      console.log(`Job ${jobId}: No transcript in DB — attempting live fetch`);
+      await markStep("detecting_segments", "loading");
+
+      const ytMeta = v.youtube_metadata as any;
+      const ytVideoId = ytMeta?.videoId;
+      if (!ytVideoId)
+        throw new Error("No YouTube video ID found on video record");
+
+      let rawTranscript: any[] | null = null;
+
+      try {
+        // Attempt 1: default (auto-selects available language)
+        const { YoutubeTranscript } = await import("youtube-transcript");
+        rawTranscript = await YoutubeTranscript.fetchTranscript(ytVideoId);
+      } catch {
+        try {
+          // Attempt 2: force English (handles auto-generated captions)
+          const { YoutubeTranscript } = await import("youtube-transcript");
+          rawTranscript = await YoutubeTranscript.fetchTranscript(ytVideoId, {
+            lang: "en",
+          });
+        } catch (e2: any) {
+          throw new Error(
+            `Could not fetch transcript: ${e2.message}. Make sure the video has captions or auto-generated subtitles enabled.`,
+          );
+        }
+      }
+
+      if (!rawTranscript || rawTranscript.length === 0) {
+        throw new Error(
+          "Transcript returned empty. The video may not have captions or they may be disabled.",
+        );
+      }
+
+      // youtube-transcript returns offset/duration in seconds
+      transcript = rawTranscript.map((item: any) => ({
+        start: Number(item.offset),
+        end: Number(item.offset) + Number(item.duration),
+        text: item.text,
+        confidence: 1.0,
+      }));
+
+      // Persist to video so future runs don't need to re-fetch
+      await supabase
+        .from("videos")
+        .update({ transcript } as any)
+        .eq("id", videoId);
+
+      console.log(
+        `Job ${jobId}: Fetched ${transcript.length} transcript words on-demand`,
+      );
+    }
+
+    // ── AI Segment Detection ─────────────────────────────────────────────
+    if (segments && segments.length > 0) {
+      console.log(
+        `Job ${jobId}: Reusing cached segments (${segments.length} segments)`,
+      );
+      steps.detecting_segments = "done";
+      await updateJobStatus(jobId, "detecting_segments", 80, {
+        segments,
+        started_at: new Date().toISOString(),
+        steps,
+      });
+    } else {
+      steps.detecting_segments = "loading";
+      await updateJobStatus(jobId, "detecting_segments", 20, {
+        started_at: new Date().toISOString(),
+        steps,
+      });
+
+      const openAISegments = await detectSegmentsOpenAI(transcript);
+      segments = openAISegmentsToStandard(openAISegments);
+
+      // Enforce clip limit based on plan
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("subscription_plan, subscription_status")
+        .eq("id", userId)
+        .single();
+
+      const config = useRuntimeConfig();
+      const isActive =
+        config.bypassPayment ||
+        (profileData &&
+          ["active", "trialing"].includes(
+            (profileData as any).subscription_status,
+          ));
+      const planName = isActive
+        ? (profileData as any)?.subscription_plan || "free"
+        : "free";
+      const limits = (
+        await import("#shared/utils/subscriptionLimits")
+      ).getPlanLimits(planName);
+      if (segments.length > limits.maxClipsPerGeneration) {
+        segments = segments.slice(0, limits.maxClipsPerGeneration);
+      }
+
+      steps.detecting_segments = "done";
+      await updateJobStatus(jobId, "detecting_segments", 80, {
+        segments,
+        steps,
+      });
+    }
+
+    // ── Create virtual "shorts" (timestamp-only, no rendered video) ──────
+    // For YouTube videos, shorts are just metadata — no storage_path.
+    const ytMeta = v.youtube_metadata as any;
+    const youtubeVideoId = ytMeta?.videoId || "";
+
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i]!;
+      await supabase.from("shorts").insert({
+        job_id: jobId,
+        video_id: videoId,
+        user_id: userId,
+        title: segment.title,
+        storage_path: `youtube://${youtubeVideoId}`,
+        thumbnail_path: ytMeta?.thumbnailUrl || null,
+        duration: segment.end - segment.start,
+        start_time: segment.start,
+        end_time: segment.end,
+        score: segment.score,
+        width: 1080,
+        height: 1920,
+        file_size: 0,
+        has_subtitles: false,
+      });
+    }
+
+    // ── Complete ─────────────────────────────────────────────────────────
+    // Infer duration from transcript if not already set
+    const inferredDuration =
+      v.duration ||
+      (transcript.length > 0 ? transcript[transcript.length - 1]!.end : 0);
+
+    await supabase
+      .from("videos")
+      .update({
+        status: "completed",
+        duration: inferredDuration,
+      } as any)
+      .eq("id", videoId);
+
+    await updateJobStatus(jobId, "completed", 100, {
+      steps,
+      completed_at: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`YouTube job ${jobId} failed:`, error);
+
+    steps.detecting_segments = "error";
+    await updateJobStatus(jobId, "failed", 0, {
+      error_message: error.message || "YouTube processing failed",
+      failed_at_step: "detecting_segments",
+      steps,
+    });
+
+    await supabase
+      .from("videos")
+      .update({ status: "failed" } as any)
+      .eq("id", videoId);
+  }
+}
+
+/**
+ * Upload pipeline — full rendering with FFmpeg.
+ * Original pipeline: audio extraction → transcription → segment detection → video processing.
+ */
+async function processUploadJob(
   jobId: string,
   videoId: string,
   userId: string,

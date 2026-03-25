@@ -28,6 +28,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: "Video not found" });
   }
 
+  // Determine clip mode based on video source
+  const videoSource = (video as any).source || "upload";
+  const clipMode =
+    videoSource === "youtube" ? "transcript_only" : "full_render";
+
   // Create job record — if a previous job failed, carry over its transcript/segments
   // so we don't redo expensive API calls (Deepgram, Mistral)
   let carryOverData: Record<string, any> = {};
@@ -68,6 +73,7 @@ export default defineEventHandler(async (event) => {
       user_id: user.id,
       status: "queued",
       progress: 0,
+      clip_mode: clipMode,
       subtitle_settings: subtitleSettings || null,
       ...carryOverData,
     } as any)

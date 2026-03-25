@@ -58,7 +58,7 @@ const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.pr
       Simple, transparent pricing
     </component>
     <p class="mt-4 text-lg text-muted-foreground max-w-xl mx-auto">
-      Upload once. Let AI find the best moments and generate ready-to-post vertical shorts — automatically.
+      Paste a YouTube link for free. Upload your own videos for the full rendering pipeline.
     </p>
 
     <!-- Early-bird banner -->
@@ -77,7 +77,7 @@ const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.pr
     <Card class="flex flex-col">
       <CardHeader class="pb-4">
         <CardTitle class="text-xl">Free</CardTitle>
-        <CardDescription>Try it out, no credit card needed</CardDescription>
+        <CardDescription>Paste YouTube links and discover viral moments — no card needed</CardDescription>
       </CardHeader>
       <CardContent class="flex-1 space-y-5">
         <div class="text-4xl font-bold">
@@ -87,24 +87,36 @@ const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.pr
         <!-- Limits table -->
         <div class="rounded-xl bg-muted/50 divide-y divide-border text-sm overflow-hidden">
           <div class="flex items-center justify-between px-4 py-2.5">
-            <span class="text-muted-foreground">Uploads / month</span>
-            <span class="font-semibold">{{ limits.free.videoUploadsPerMonth }}</span>
+            <span class="text-muted-foreground">YouTube links / month</span>
+            <span class="font-semibold text-green-600 dark:text-green-400">{{ limits.free.youtubeLinksPerMonth }}</span>
+          </div>
+          <div class="flex items-center justify-between px-4 py-2.5">
+            <span class="text-muted-foreground">File uploads / month</span>
+            <span class="font-semibold text-muted-foreground">{{ limits.free.videoUploadsPerMonth }}</span>
           </div>
           <div class="flex items-center justify-between px-4 py-2.5">
             <span class="text-muted-foreground">Max video length</span>
             <span class="font-semibold">{{ limits.free.maxDurationMinutes }} min</span>
           </div>
           <div class="flex items-center justify-between px-4 py-2.5">
-            <span class="text-muted-foreground">Max file size</span>
-            <span class="font-semibold">{{ formatSize(limits.free.maxFileSizeMb) }}</span>
+            <span class="text-muted-foreground">Clips per generation</span>
+            <span class="font-semibold">{{ limits.free.maxClipsPerGeneration }}</span>
           </div>
         </div>
 
         <!-- Differentiators -->
         <ul class="space-y-2.5 text-sm">
+          <li class="flex items-center gap-2.5">
+            <span class="text-green-500 shrink-0 font-bold">✓</span>
+            <span>AI viral moment detection</span>
+          </li>
+          <li class="flex items-center gap-2.5">
+            <span class="text-green-500 shrink-0 font-bold">✓</span>
+            <span>Timestamped clip highlights</span>
+          </li>
           <li class="flex items-start gap-2.5 text-muted-foreground">
             <span class="mt-0.5 text-amber-500 shrink-0">⚠</span>
-            <span>Shorts include a watermark</span>
+            <span>No video rendering (timestamps only)</span>
           </li>
         </ul>
       </CardContent>
@@ -142,7 +154,11 @@ const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.pr
         <!-- Limits table -->
         <div class="rounded-xl bg-primary/5 border border-primary/20 divide-y divide-primary/10 text-sm overflow-hidden">
           <div class="flex items-center justify-between px-4 py-2.5">
-            <span class="text-muted-foreground">Uploads / month</span>
+            <span class="text-muted-foreground">YouTube links / month</span>
+            <span class="font-semibold">{{ limits.pro.youtubeLinksPerMonth }}</span>
+          </div>
+          <div class="flex items-center justify-between px-4 py-2.5">
+            <span class="text-muted-foreground">File uploads / month</span>
             <span class="font-semibold">{{ limits.pro.videoUploadsPerMonth }}</span>
           </div>
           <div class="flex items-center justify-between px-4 py-2.5">
@@ -153,10 +169,22 @@ const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.pr
             <span class="text-muted-foreground">Max file size</span>
             <span class="font-semibold">{{ formatSize(limits.pro.maxFileSizeMb) }}</span>
           </div>
+          <div class="flex items-center justify-between px-4 py-2.5">
+            <span class="text-muted-foreground">Clips per generation</span>
+            <span class="font-semibold">{{ limits.pro.maxClipsPerGeneration }}</span>
+          </div>
         </div>
 
         <!-- Differentiators -->
         <ul class="space-y-2.5 text-sm">
+          <li class="flex items-center gap-2.5">
+            <span class="text-green-500 shrink-0 font-bold">✓</span>
+            <span>Full video rendering &amp; download</span>
+          </li>
+          <li class="flex items-center gap-2.5">
+            <span class="text-green-500 shrink-0 font-bold">✓</span>
+            <span>Burned-in subtitles &amp; smart crop</span>
+          </li>
           <li class="flex items-center gap-2.5">
             <span class="text-green-500 shrink-0 font-bold">✓</span>
             <span>No watermark on shorts</span>
@@ -199,7 +227,11 @@ const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.pr
         <!-- Limits table -->
         <div class="rounded-xl bg-muted/50 divide-y divide-border text-sm overflow-hidden">
           <div class="flex items-center justify-between px-4 py-2.5">
-            <span class="text-muted-foreground">Uploads / month</span>
+            <span class="text-muted-foreground">YouTube links / month</span>
+            <span class="font-semibold">{{ limits.business.youtubeLinksPerMonth === 999 ? 'Unlimited' : limits.business.youtubeLinksPerMonth }}</span>
+          </div>
+          <div class="flex items-center justify-between px-4 py-2.5">
+            <span class="text-muted-foreground">File uploads / month</span>
             <span class="font-semibold">{{ limits.business.videoUploadsPerMonth }}</span>
           </div>
           <div class="flex items-center justify-between px-4 py-2.5">
@@ -210,10 +242,22 @@ const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.pr
             <span class="text-muted-foreground">Max file size</span>
             <span class="font-semibold">{{ formatSize(limits.business.maxFileSizeMb) }}</span>
           </div>
+          <div class="flex items-center justify-between px-4 py-2.5">
+            <span class="text-muted-foreground">Clips per generation</span>
+            <span class="font-semibold">{{ limits.business.maxClipsPerGeneration }}</span>
+          </div>
         </div>
 
         <!-- Differentiators -->
         <ul class="space-y-2.5 text-sm">
+          <li class="flex items-center gap-2.5">
+            <span class="text-green-500 shrink-0 font-bold">✓</span>
+            <span>Full video rendering &amp; download</span>
+          </li>
+          <li class="flex items-center gap-2.5">
+            <span class="text-green-500 shrink-0 font-bold">✓</span>
+            <span>Burned-in subtitles &amp; smart crop</span>
+          </li>
           <li class="flex items-center gap-2.5">
             <span class="text-green-500 shrink-0 font-bold">✓</span>
             <span>No watermark on shorts</span>
@@ -251,13 +295,13 @@ const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.pr
   <!-- ─── Tagline ──────────────────────────────────────────────────────── -->
   <div class="text-center mt-14">
     <p class="text-base font-medium text-primary">
-      ⚡ Upload once, generate dozens of ready-to-post shorts in one click — <b>save hours of editing every week</b>.
+      ⚡ Paste a YouTube link → get viral clip timestamps in seconds. Upload your own videos for the full rendering pipeline.
     </p>
   </div>
 
   <!-- ─── Transparency note ────────────────────────────────────────────── -->
   <div class="mt-10 max-w-2xl mx-auto text-center text-xs text-muted-foreground space-y-1.5">
     <p>All plans include AI-powered segment detection and fully customisable subtitle styles.</p>
-    <p>Upload counters reset automatically on the 1st of each month.</p>
+    <p>YouTube link and upload counters reset automatically on the 1st of each month.</p>
   </div>
 </template>

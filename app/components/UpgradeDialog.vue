@@ -12,7 +12,7 @@
 
 interface Props {
   open: boolean
-  type: 'UPLOAD' | 'GENERATION'
+  type: 'UPLOAD' | 'GENERATION' | 'YOUTUBE_LINK'
   used: number
   limit: number
   resetDate: string
@@ -23,7 +23,11 @@ const emit = defineEmits<{
   'update:open': [value: boolean]
 }>()
 
-const typeLabel = computed(() => (props.type === 'UPLOAD' ? 'uploads' : 'generations'))
+const typeLabel = computed(() => {
+  if (props.type === 'UPLOAD') return 'uploads'
+  if (props.type === 'YOUTUBE_LINK') return 'YouTube links'
+  return 'generations'
+})
 
 const formattedResetDate = computed(() => {
   try {
@@ -62,7 +66,7 @@ async function goToPricing() {
       <!-- Usage details -->
       <div class="rounded-lg border bg-muted/50 p-4 space-y-3">
         <div class="flex items-center justify-between">
-          <span class="text-sm font-medium">{{ type === 'UPLOAD' ? 'Video uploads' : 'Shorts generations' }}</span>
+          <span class="text-sm font-medium">{{ type === 'UPLOAD' ? 'Video uploads' : type === 'YOUTUBE_LINK' ? 'YouTube links' : 'Shorts generations' }}</span>
           <Badge variant="destructive">Limit reached</Badge>
         </div>
         <div class="space-y-1.5">

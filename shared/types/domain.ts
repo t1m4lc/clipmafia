@@ -28,7 +28,16 @@ export interface SubtitleSettings {
   alignment: number;
 }
 
-export type VideoStatus = "uploaded" | "processing" | "completed" | "failed";
+export type VideoSource = "youtube" | "upload";
+
+export type VideoStatus =
+  | "uploaded"
+  | "ready"
+  | "processing"
+  | "completed"
+  | "failed";
+
+export type ClipMode = "transcript_only" | "full_render";
 
 export type JobStatus =
   | "queued"
@@ -49,6 +58,29 @@ export type SubscriptionStatus =
   | "canceled"
   | "past_due"
   | "trialing";
+
+/**
+ * YouTube video metadata fetched via oEmbed / yt-dlp.
+ */
+export interface YouTubeMetadata {
+  videoId: string;
+  title: string;
+  author: string;
+  thumbnailUrl: string;
+  /** Duration in seconds (0 if unknown) */
+  duration: number;
+}
+
+/**
+ * Referral record — tracks a user sharing for upload credit rewards.
+ */
+export interface Referral {
+  id: string;
+  referrer_id: string;
+  platform: "twitter" | "other";
+  credited: boolean;
+  created_at: string;
+}
 
 /**
  * Maximum duration in seconds for generated shorts.
