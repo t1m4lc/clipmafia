@@ -63,11 +63,6 @@ watch(
                 🚀 Upload Your First Video
               </Button>
             </NuxtLink>
-            <a href="#how-it-works">
-              <Button variant="outline" size="lg" class="text-lg px-8 py-6">
-                See How It Works
-              </Button>
-            </a>
           </div>
         </div>
       </div>
@@ -190,6 +185,57 @@ watch(
               </div>
             </div>
             <p class="text-xs text-muted-foreground">Generate multiple shorts from one upload</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="border-t py-24">
+      <div class="container mx-auto px-4">
+        <div class="text-center mb-12">
+          <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Everything included in every plan</h2>
+          <p class="mt-4 text-lg text-muted-foreground max-w-xl mx-auto">
+            Every feature is unlocked from day one — no hidden add-ons.
+          </p>
+        </div>
+        <div class="max-w-4xl mx-auto rounded-2xl border bg-muted/30 px-6 py-10">
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-8">
+            <div class="flex flex-col items-center text-center gap-2.5">
+              <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-3xl shrink-0">🧠</div>
+              <div>
+                <p class="text-sm font-semibold leading-tight">Viral Detection</p>
+                <p class="text-xs text-muted-foreground mt-1 leading-snug">AI ranks every moment by engagement potential</p>
+              </div>
+            </div>
+            <div class="flex flex-col items-center text-center gap-2.5">
+              <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-3xl shrink-0">✍️</div>
+              <div>
+                <p class="text-sm font-semibold leading-tight">Auto Subtitles</p>
+                <p class="text-xs text-muted-foreground mt-1 leading-snug">Burned-in captions with fully customisable style</p>
+              </div>
+            </div>
+            <div class="flex flex-col items-center text-center gap-2.5">
+              <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-3xl shrink-0">📐</div>
+              <div>
+                <p class="text-sm font-semibold leading-tight">Auto 9:16 Crop</p>
+                <p class="text-xs text-muted-foreground mt-1 leading-snug">Smart vertical framing for TikTok &amp; Reels</p>
+              </div>
+            </div>
+            <div class="flex flex-col items-center text-center gap-2.5">
+              <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-3xl shrink-0">📄</div>
+              <div>
+                <p class="text-sm font-semibold leading-tight">Full Transcription</p>
+                <p class="text-xs text-muted-foreground mt-1 leading-snug">All speech as text — download SRT, VTT or JSON</p>
+              </div>
+            </div>
+            <div class="flex flex-col items-center text-center gap-2.5">
+              <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-3xl shrink-0">🔁</div>
+              <div>
+                <p class="text-sm font-semibold leading-tight">Reusable File</p>
+                <p class="text-xs text-muted-foreground mt-1 leading-snug">Re-process or re-download any format, any time</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

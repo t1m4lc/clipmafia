@@ -27,10 +27,11 @@ const emit = defineEmits<{
 }>()
 
 const limits = {
-  free: SUBSCRIPTION_LIMITS.FREE,
-  pro: SUBSCRIPTION_LIMITS.PRO,
-  business: SUBSCRIPTION_LIMITS.BUSINESS,
+  free: SUBSCRIPTION_CONFIG.FREE,
+  pro: SUBSCRIPTION_CONFIG.PRO,
+  business: SUBSCRIPTION_CONFIG.BUSINESS,
 }
+
 
 function formatSize(mb: number): string {
   if (mb < 1024) return `${mb} MB`
@@ -40,39 +41,10 @@ function formatSize(mb: number): string {
 /** True when we are in a context where the user is authenticated. */
 const isAuthenticated = computed(() => props.currentPlan !== null)
 
-/** Early-bird discount: show €9 instead of €15 when ?code=earlybid is in the URL. */
+/** Early-bird discount: show €9 instead of the config price when ?code=earlybid is in the URL. */
 const route = useRoute()
 const isEarlyBird = computed(() => route.query.code === 'earlybid')
-const proPrice = computed(() => isEarlyBird.value ? '€9' : '€15')
-
-/** Core features included in every plan. */
-const coreFeatures = [
-  {
-    icon: '🧠',
-    title: 'Viral Detection',
-    desc: 'AI ranks every moment by engagement potential',
-  },
-  {
-    icon: '✍️',
-    title: 'Auto Subtitles',
-    desc: 'Burned-in captions with fully customisable style',
-  },
-  {
-    icon: '📐',
-    title: 'Auto 9:16 Crop',
-    desc: 'Smart vertical framing for TikTok & Reels',
-  },
-  {
-    icon: '📄',
-    title: 'Full Transcription',
-    desc: 'All speech as text — download SRT, VTT or JSON',
-  },
-  {
-    icon: '🔁',
-    title: 'Reusable File',
-    desc: 'Re-process or re-download any format, any time',
-  },
-]
+const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.price}`)
 </script>
 
 <template>
@@ -98,28 +70,6 @@ const coreFeatures = [
     </div>
   </div>
 
-  <!-- ─── "Included in every plan" feature strip ──────────────────────── -->
-  <div class="max-w-4xl mx-auto mb-14 rounded-2xl border bg-muted/30 px-6 py-8">
-    <p class="text-center text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-7">
-      Everything included in every plan
-    </p>
-    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-6">
-      <div
-        v-for="f in coreFeatures"
-        :key="f.title"
-        class="flex flex-col items-center text-center gap-2.5"
-      >
-        <div class="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-2xl shrink-0">
-          {{ f.icon }}
-        </div>
-        <div>
-          <p class="text-xs font-semibold leading-tight">{{ f.title }}</p>
-          <p class="text-[11px] text-muted-foreground mt-1 leading-snug">{{ f.desc }}</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- ─── Pricing cards ────────────────────────────────────────────────── -->
   <div class="grid gap-6 md:grid-cols-3 max-w-5xl mx-auto items-start">
 
@@ -139,6 +89,10 @@ const coreFeatures = [
           <div class="flex items-center justify-between px-4 py-2.5">
             <span class="text-muted-foreground">Uploads / month</span>
             <span class="font-semibold">{{ limits.free.videoUploadsPerMonth }}</span>
+          </div>
+          <div class="flex items-center justify-between px-4 py-2.5">
+            <span class="text-muted-foreground">Max video length</span>
+            <span class="font-semibold">{{ limits.free.maxDurationMinutes }} min</span>
           </div>
           <div class="flex items-center justify-between px-4 py-2.5">
             <span class="text-muted-foreground">Max file size</span>
@@ -182,7 +136,7 @@ const coreFeatures = [
           <div class="text-4xl font-bold">
             {{ proPrice }}<span class="text-lg font-normal text-muted-foreground">/mo</span>
           </div>
-          <div v-if="isEarlyBird" class="mb-1 text-sm text-muted-foreground line-through">€15</div>
+          <div v-if="isEarlyBird" class="mb-1 text-sm text-muted-foreground line-through">€{{ limits.pro.price }}</div>
         </div>
 
         <!-- Limits table -->
@@ -190,6 +144,10 @@ const coreFeatures = [
           <div class="flex items-center justify-between px-4 py-2.5">
             <span class="text-muted-foreground">Uploads / month</span>
             <span class="font-semibold">{{ limits.pro.videoUploadsPerMonth }}</span>
+          </div>
+          <div class="flex items-center justify-between px-4 py-2.5">
+            <span class="text-muted-foreground">Max video length</span>
+            <span class="font-semibold">{{ limits.pro.maxDurationMinutes }} min</span>
           </div>
           <div class="flex items-center justify-between px-4 py-2.5">
             <span class="text-muted-foreground">Max file size</span>
@@ -235,7 +193,7 @@ const coreFeatures = [
       </CardHeader>
       <CardContent class="flex-1 space-y-5">
         <div class="text-4xl font-bold">
-          €45<span class="text-lg font-normal text-muted-foreground">/mo</span>
+          €{{ limits.business.price }}<span class="text-lg font-normal text-muted-foreground">/mo</span>
         </div>
 
         <!-- Limits table -->
@@ -243,6 +201,10 @@ const coreFeatures = [
           <div class="flex items-center justify-between px-4 py-2.5">
             <span class="text-muted-foreground">Uploads / month</span>
             <span class="font-semibold">{{ limits.business.videoUploadsPerMonth }}</span>
+          </div>
+          <div class="flex items-center justify-between px-4 py-2.5">
+            <span class="text-muted-foreground">Max video length</span>
+            <span class="font-semibold">{{ limits.business.maxDurationMinutes }} min</span>
           </div>
           <div class="flex items-center justify-between px-4 py-2.5">
             <span class="text-muted-foreground">Max file size</span>

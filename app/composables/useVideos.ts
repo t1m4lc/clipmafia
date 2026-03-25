@@ -209,8 +209,17 @@ export function useVideos() {
     return data;
   }
 
+  /** Steps that correspond to the "Create Shorts" phase (step 4). */
+  const CREATING_STEPS_POLL = [
+    "processing_video",
+    "burning_subtitles",
+    "uploading",
+  ];
+
   /**
    * Poll job status until completion.
+   * Also refreshes the shorts list during the "Create Shorts" phase so the
+   * client can derive smooth per-segment progress.
    */
   function pollJobStatus(videoId: string, interval: number = 3000) {
     const polling = ref(true);
@@ -224,6 +233,11 @@ export function useVideos() {
             await fetchShorts(videoId);
           }
           break;
+        }
+        // Refresh shorts count during step-4 so progress bar can increment
+        // after each individual segment is created.
+        if (job && CREATING_STEPS_POLL.includes(job.status)) {
+          await fetchShorts(videoId);
         }
         await new Promise((resolve) => setTimeout(resolve, interval));
       }

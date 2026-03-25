@@ -14,15 +14,8 @@ onMounted(async () => {
 
 const stats = computed(() => usageStats())
 
-const upgradeSettingsOpen = ref(false)
-const config = useRuntimeConfig()
-
 function handleSettingsClick() {
-  if (!config.public.bypassPayment && effectivePlan() === 'free') {
-    upgradeSettingsOpen.value = true
-  } else {
-    navigateTo('/dashboard/settings')
-  }
+  navigateTo('/dashboard/settings')
 }
 
 function getStatusColor(status: string) {
@@ -143,25 +136,5 @@ function getStatusColor(status: string) {
     </div>
   </div>
 
-  <!-- Settings upgrade dialog (free plan) -->
-  <Dialog :open="upgradeSettingsOpen" @update:open="upgradeSettingsOpen = $event">
-    <div class="space-y-6">
-      <div class="space-y-2 text-center">
-        <div class="text-5xl">⚙️</div>
-        <h2 class="text-xl font-bold">Pro Feature</h2>
-        <p class="text-muted-foreground text-sm">
-          Subtitle style customization is available on <strong>Pro</strong> and <strong>Business</strong> plans.
-          Upgrade to personalize fonts, colors, animations and more.
-        </p>
-      </div>
-      <div class="flex flex-col gap-2">
-        <Button @click="navigateTo('/pricing')">
-          🚀 Upgrade Now
-        </Button>
-        <Button variant="outline" @click="upgradeSettingsOpen = false">
-          Maybe Later
-        </Button>
-      </div>
-    </div>
-  </Dialog>
+
 </template>

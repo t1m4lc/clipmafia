@@ -1,3 +1,5 @@
+import { getPlanLimits } from "#shared/utils/subscriptionLimits";
+
 /**
  * POST /api/videos/upload
  *
@@ -41,6 +43,32 @@ export default defineEventHandler(async (event) => {
         statusCode: 429,
         data: buildDeniedPayload("UPLOAD", uploadCheck),
         message: "Monthly upload limit reached. Please upgrade your plan.",
+      });
+    }
+  }
+
+  // ── File-size enforcement (server-side safety net) ────────────────────────
+  // The client validates client-side, but we also enforce here so the limit
+  // cannot be bypassed by a direct API call.
+  if (fileSize != null) {
+    const supabaseAdmin = useSupabaseAdmin();
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("subscription_plan, subscription_status")
+      .eq("id", user.id)
+      .single();
+    const isActive =
+      profile &&
+      ["active", "trialing"].includes(profile.subscription_status ?? "");
+    const planName = (isActive ? profile.subscription_plan : "free") || "free";
+    const limits = getPlanLimits(planName);
+    const maxBytes = limits.maxFileSizeMb * 1024 * 1024;
+    if (fileSize > maxBytes) {
+      // Delete the already-uploaded file so it doesn't linger in storage
+      await supabaseAdmin.storage.from("videos").remove([storagePath]);
+      throw createError({
+        statusCode: 413,
+        message: `File exceeds the ${limits.maxFileSizeMb} MB limit for your plan.`,
       });
     }
   }

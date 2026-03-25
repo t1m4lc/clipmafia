@@ -31,7 +31,6 @@ const {
 } = useVideos()
 
 const { settings: subtitleSettings } = useSubtitleSettings()
-const { showUpgradeDialog, limitPayload, handleLimitError } = useUsageLimits()
 
 const router = useRouter()
 const deleting = ref(false)
@@ -205,9 +204,7 @@ async function confirmGenerate() {
     await generateShorts(videoId, subtitleSettings.value)
     pollJobStatus(videoId, 2000)
   } catch (e: any) {
-    if (!handleLimitError(e)) {
-      errorMessage.value = e?.data?.message || e.message || 'Failed to start processing'
-    }
+    errorMessage.value = e?.data?.message || e.message || 'Failed to start processing'
     generating.value = false
   }
 }
@@ -310,13 +307,33 @@ function getJobStatusLabel(status: string): string {
 
 const jobProgress = computed(() => {
   if (!currentJob.value) return 0
-  if (currentJob.value.progress > 0) return currentJob.value.progress
-  const progressMap: Record<string, number> = {
-    queued: 5, extracting_audio: 15, transcribing: 30,
-    detecting_segments: 50, processing_video: 70,
-    burning_subtitles: 85, uploading: 95, completed: 100, failed: 0,
+  const status = currentJob.value.status ?? ''
+
+  if (status === 'completed') return 100
+  if (status === 'failed') return 0
+
+  // ── Step 4: Create Shorts ────────────────────────────────────────────────
+  // After the first 3 steps the bar sits at 60 %.
+  // The remaining 40 % is distributed evenly across all detected segments;
+  // the bar advances by one slice as each short is created.
+  if (CREATING_STEPS.includes(status)) {
+    const totalSegments = segments.value.length
+    if (totalSegments > 0) {
+      const completedShorts = shorts.value.length
+      return 60 + Math.round((completedShorts / totalSegments) * 40)
+    }
+    return 60
   }
-  return progressMap[currentJob.value.status] || 0
+
+  // ── Steps 1-3 ────────────────────────────────────────────────────────────
+  // Fixed milestones — never exceed 60 % so step-4 always has room to grow.
+  const progressMap: Record<string, number> = {
+    queued: 3,
+    extracting_audio: 20,
+    transcribing: 38,
+    detecting_segments: 55,
+  }
+  return progressMap[status] ?? 0
 })
 
 const jobSteps = computed(() => (currentJob.value as any)?.steps || null)
@@ -907,11 +924,6 @@ async function seekToSegment(segment: Segment) {
           <CardDescription>Let AI find the best moments and create vertical shorts automatically.</CardDescription>
         </CardHeader>
         <CardContent class="space-y-5">
-          <div class="rounded-lg border border-dashed p-3 flex items-start gap-2 text-sm">
-            <span>✨</span>
-            <span class="text-muted-foreground">AI automatically detects the best passages and chooses the optimal duration for each short (15–90s).</span>
-          </div>
-
           <div class="rounded-lg border border-dashed p-3 flex items-center justify-between gap-3">
             <div class="flex items-center gap-2 text-sm">
               <span>🎨</span>
@@ -1042,14 +1054,6 @@ async function seekToSegment(segment: Segment) {
       </Teleport>
     </template>
 
-    <!-- Upgrade Dialog (triggered by backend 429) -->
-    <UpgradeDialog
-      v-model:open="showUpgradeDialog"
-      :type="limitPayload.type"
-      :used="limitPayload.used"
-      :limit="limitPayload.limit"
-      :reset-date="limitPayload.resetDate"
-    />
   </div>
 </template>
 

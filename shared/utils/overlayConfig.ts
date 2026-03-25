@@ -24,13 +24,13 @@ export interface SubtitleStyleConfig {
 
 export const DEFAULT_SUBTITLE_STYLE: SubtitleStyleConfig = {
   fontName: "Courier New",
-  fontSize: 50,
+  fontSize: 60,
   primaryColor: "#FFFFFF",
   outlineColor: "#000000",
   bold: true,
   outline: 5,
   shadow: 2,
-  marginV: 400,
+  marginV: 450,
   alignment: 2,
 };
 
@@ -56,9 +56,9 @@ export interface WatermarkConfig {
 }
 
 export const WATERMARK_CONFIG: WatermarkConfig = {
-  text: "clipmafia.com",
+  text: "made with clipmafia.com",
   fontName: "Courier New",
-  fontSize: 24,
+  fontSize: 26,
   color: "#FFFFFF",
   outlineColor: "#000000",
   outline: 3,

@@ -1,10 +1,10 @@
 type Profile = Tables<"profiles">;
 
-/** Resolve SUBSCRIPTION_LIMITS entry for a lowercase plan name. */
+/** Resolve SUBSCRIPTION_CONFIG entry for a lowercase plan name. */
 function planLimits(plan: string) {
   return (
-    SUBSCRIPTION_LIMITS[plan.toUpperCase() as PlanName] ??
-    SUBSCRIPTION_LIMITS.FREE
+    SUBSCRIPTION_CONFIG[plan.toUpperCase() as PlanName] ??
+    SUBSCRIPTION_CONFIG.FREE
   );
 }
 
@@ -90,10 +90,10 @@ export function useProfile() {
 
   /**
    * Get max upload file size in bytes for the current user's plan.
-   * - bypass  → Infinity (no limit)
-   * - free    → 250 MB  (≈ 10 min @ 1080p)
-   * - basic   → 750 MB  (≈ 30 min @ 1080p)
-   * - pro     → 2 000 MB (≈ 1 h  @ 1080p)
+   * - bypass   → Infinity (no limit)
+   * - free     → 100 MB  (5 min max)
+   * - pro      → 1 GB    (30 min max)
+   * - business → 3 GB    (60 min max)
    * Falls back to free limit when plan is inactive / unknown.
    */
   function getUploadLimit(): number {
@@ -104,14 +104,21 @@ export function useProfile() {
   }
 
   /**
-   * Get upload limit info (MB + duration label) for display in the UI.
+   * Get upload limit info for display in the UI and client-side validation.
+   * Returns null when bypassPayment is true (unlimited).
    */
-  function getUploadLimitInfo(): { mb: number } | null {
+  function getUploadLimitInfo(): {
+    mb: number;
+    durationMinutes: number;
+  } | null {
     const config = useRuntimeConfig();
     if (config.public.bypassPayment) return null; // null = unlimited
     const plan = profile.value ? effectivePlan() : "free";
     const l = planLimits(plan);
-    return { mb: l.maxFileSizeMb };
+    return {
+      mb: l.maxFileSizeMb,
+      durationMinutes: l.maxDurationMinutes,
+    };
   }
 
   // ── Monthly usage (from monthly_usage table) ────────────────────────────

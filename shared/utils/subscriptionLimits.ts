@@ -1,32 +1,46 @@
 /**
  * Shared subscription plan limits — source of truth for both client and server.
  * Imported by pricing.vue (client) and server/utils/subscriptionLimits.ts (server).
+ *
+ * Strategy: each plan caps video **duration** and **file size**.
+ * Duration is the primary UX-facing limit ("up to 30 min").
+ * File size is the hard safety net enforced server-side.
+ * Both are checked client-side before upload; the server re-checks file size.
  */
 
 export type PlanName = "FREE" | "PRO" | "BUSINESS";
 
-export interface PlanLimits {
+export interface PlanSettings {
   videoUploadsPerMonth: number;
+  /** Maximum video duration in minutes */
+  maxDurationMinutes: number;
   /** Maximum file size in megabytes for a single video upload */
   maxFileSizeMb: number;
+  price: number;
 }
 
-export const SUBSCRIPTION_LIMITS: Record<PlanName, PlanLimits> = {
+export const SUBSCRIPTION_CONFIG: Record<PlanName, PlanSettings> = {
   FREE: {
     videoUploadsPerMonth: 1,
+    maxDurationMinutes: 3,
     maxFileSizeMb: 50,
+    price: 0,
   },
   PRO: {
     videoUploadsPerMonth: 10,
-    maxFileSizeMb: 500, // 1 GB
+    maxDurationMinutes: 30,
+    maxFileSizeMb: 1024, // 1 GB
+    price: 15,
   },
   BUSINESS: {
     videoUploadsPerMonth: 50,
-    maxFileSizeMb: 1024, // 1 GB
+    maxDurationMinutes: 60,
+    maxFileSizeMb: 3072, // 3 GB
+    price: 75,
   },
 };
 
 export function getPlanLimits(dbPlan: string): PlanLimits {
   const key = dbPlan.toUpperCase() as PlanName;
-  return SUBSCRIPTION_LIMITS[key] ?? SUBSCRIPTION_LIMITS.FREE;
+  return SUBSCRIPTION_CONFIG[key] ?? SUBSCRIPTION_CONFIG.FREE;
 }
