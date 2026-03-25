@@ -28,20 +28,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: "Video not found" });
   }
 
-  // Server-side generation limit enforcement
-  const config = useRuntimeConfig();
-  if (!config.bypassPayment) {
-    const generationCheck = await canGenerateShort(user.id);
-    if (!generationCheck.allowed) {
-      throw createError({
-        statusCode: 429,
-        data: buildDeniedPayload("GENERATION", generationCheck),
-        message:
-          "Monthly shorts generation limit reached. Please upgrade your plan.",
-      });
-    }
-  }
-
   // Create job record — if a previous job failed, carry over its transcript/segments
   // so we don't redo expensive API calls (Deepgram, Mistral)
   let carryOverData: Record<string, any> = {};
@@ -97,9 +83,6 @@ export default defineEventHandler(async (event) => {
     .from("videos")
     .update({ status: "processing" })
     .eq("id", videoId);
-
-  // Always increment the generation counter (bypass only skips the limit *check*, not the counting)
-  await incrementGenerationCount(user.id);
 
   // Add to processing queue
   jobQueue.add({

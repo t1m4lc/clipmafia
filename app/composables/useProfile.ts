@@ -118,7 +118,6 @@ export function useProfile() {
 
   const monthlyUsage = ref<{
     uploads_count: number;
-    generations_count: number;
   } | null>(null);
 
   function getCurrentMonth(): string {
@@ -134,11 +133,11 @@ export function useProfile() {
     if (!user.value) return;
     const { data } = await supabase
       .from("monthly_usage")
-      .select("uploads_count, generations_count")
+      .select("uploads_count")
       .eq("user_id", user.value.id)
       .eq("month", getCurrentMonth())
       .maybeSingle();
-    monthlyUsage.value = data ?? { uploads_count: 0, generations_count: 0 };
+    monthlyUsage.value = data ?? { uploads_count: 0 };
   }
 
   /**
@@ -149,19 +148,12 @@ export function useProfile() {
     const plan = effectivePlan();
     const limits = planLimits(plan);
     const uploadsUsed = monthlyUsage.value?.uploads_count ?? 0;
-    const generationsUsed = monthlyUsage.value?.generations_count ?? 0;
     const uploadsAtLimit = uploadsUsed >= limits.videoUploadsPerMonth;
-    const generationsAtLimit =
-      limits.shortsGenerationsPerMonth !== Infinity &&
-      generationsUsed >= limits.shortsGenerationsPerMonth;
     return {
       uploadsUsed,
       uploadsLimit: limits.videoUploadsPerMonth,
       uploadsAtLimit,
-      generationsUsed,
-      generationsLimit: limits.shortsGenerationsPerMonth,
-      generationsAtLimit,
-      atLimit: uploadsAtLimit || generationsAtLimit,
+      atLimit: uploadsAtLimit,
     };
   }
 

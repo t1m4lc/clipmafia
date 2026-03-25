@@ -57,7 +57,7 @@ function getStatusColor(status: string) {
     </div>
 
     <!-- Stats -->
-    <div v-if="profile" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div v-if="profile" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <!-- Total videos -->
       <Card>
         <CardContent class="pt-6">
@@ -91,21 +91,7 @@ function getStatusColor(status: string) {
         </CardContent>
       </Card>
 
-      <!-- Generations this month -->
-      <Card :class="stats.generationsAtLimit ? 'border-destructive' : ''">
-        <CardContent class="pt-6 space-y-2">
-          <div class="flex items-center justify-between">
-            <span class="text-2xl font-bold" :class="stats.generationsAtLimit ? 'text-destructive' : ''">{{ stats.generationsUsed }}/{{ stats.generationsLimit === Infinity ? '∞' : stats.generationsLimit }}</span>
-            <span v-if="stats.generationsAtLimit" class="flex h-2.5 w-2.5">
-              <span class="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-destructive opacity-75" />
-              <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-destructive" />
-            </span>
-          </div>
-          <p class="text-sm text-muted-foreground">✨ Generations this month</p>
-          <Progress v-if="stats.generationsLimit !== Infinity" :model-value="stats.generationsUsed" :max="stats.generationsLimit" class="h-1.5" />
-          <p v-if="stats.generationsAtLimit" class="text-xs text-destructive font-medium">Limit reached</p>
-        </CardContent>
-      </Card>
+
     </div>
 
     <!-- Videos List -->

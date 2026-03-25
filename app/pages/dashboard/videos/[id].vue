@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, MoreVertical, Play, Download, Trash2, ArrowDownUp, Settings } from 'lucide-vue-next'
+import { Check, MoreVertical, Play, Download, Trash2, ArrowDownUp, Settings, LayoutGrid, List, X } from 'lucide-vue-next'
 
 definePageMeta({
   layout: 'dashboard',
@@ -8,8 +8,6 @@ definePageMeta({
 
 const route = useRoute()
 const videoId = route.params.id as string
-const config = useRuntimeConfig()
-const isDevMode = Boolean(config.public.devMode)
 
 const {
   currentVideo,
@@ -58,7 +56,9 @@ const batchDownloading = ref(false)
 const sortMode = ref<'score' | 'chronological'>('score')
 const thumbnailUrls = ref<Record<string, string>>({})
 
-const devSelectedSegments = ref<Segment[]>([])
+// View mode toggle: 'list' (default) or 'card'
+const viewMode = ref<'card' | 'list'>('list')
+
 const durationFilter = ref<'7-15' | '15-30' | '30-60' | 'all'>('all')
 
 const filteredShorts = computed(() => {
@@ -83,19 +83,20 @@ const previewTitle = ref('')
 const showPreview = ref(false)
 const activeMenuShortId = ref<string | null>(null)
 
-// Original video player state
-const showOriginalPlayer = ref(false)
+// Inline original video player state (no dialog)
 const originalVideoUrl = ref('')
 const loadingOriginalVideo = ref(false)
+const inlinePlayerRef = ref<HTMLVideoElement | null>(null)
+const activeSegmentEnd = ref<number | null>(null)
+const activeSegmentIndex = ref<number | null>(null)
 
-async function playOriginalVideo() {
-  if (!currentVideo.value) return
+async function loadOriginalVideo() {
+  if (!currentVideo.value || originalVideoUrl.value) return
   loadingOriginalVideo.value = true
   try {
     const url = await getOriginalVideoUrl(currentVideo.value.id)
     if (url) {
       originalVideoUrl.value = url
-      showOriginalPlayer.value = true
     }
   } catch (e: any) {
     errorMessage.value = 'Failed to load original video'
@@ -113,8 +114,8 @@ function closeMenus() {
 }
 
 async function preloadThumbnails() {
-  if (!shorts.value.length) return
-  // Parallel fetch of thumbnail URLs for shorts that have a thumbnail_path
+  // Only load thumbnails when in card view
+  if (!shorts.value.length || viewMode.value !== 'card') return
   await Promise.all(
     shorts.value
       .filter(s => s.thumbnail_path)
@@ -135,6 +136,11 @@ onMounted(async () => {
   await fetchShorts(videoId, sortMode.value)
 
   await preloadThumbnails()
+
+  // Auto-load original video if segments are already available
+  if (segments.value.length > 0) {
+    loadOriginalVideo()
+  }
 
   if (currentJob.value && !['completed', 'failed'].includes(currentJob.value.status)) {
     generating.value = true
@@ -165,6 +171,33 @@ watch(sortMode, (mode) => {
   fetchShorts(videoId, mode)
 })
 
+watch(viewMode, (mode) => {
+  if (mode === 'card') preloadThumbnails()
+})
+
+// Auto-pause at segment end
+function handleSegmentTimeUpdate() {
+  const el = inlinePlayerRef.value
+  if (el && activeSegmentEnd.value !== null && el.currentTime >= activeSegmentEnd.value) {
+    el.pause()
+    activeSegmentEnd.value = null
+  }
+}
+
+watch(inlinePlayerRef, (el, oldEl) => {
+  if (oldEl) oldEl.removeEventListener('timeupdate', handleSegmentTimeUpdate)
+  if (el) el.addEventListener('timeupdate', handleSegmentTimeUpdate)
+})
+
+// Whether the Generate button should be shown:
+// Only if there's no job yet, or if the last job failed.
+// Once completed, it disappears — no regeneration.
+const showGenerateSection = computed(() => {
+  if (!currentJob.value) return true
+  if (currentJob.value.status === 'failed') return true
+  return false
+})
+
 async function confirmGenerate() {
   generating.value = true
   errorMessage.value = ''
@@ -172,7 +205,6 @@ async function confirmGenerate() {
     await generateShorts(videoId, subtitleSettings.value)
     pollJobStatus(videoId, 2000)
   } catch (e: any) {
-    // Let the composable check for LIMIT_REACHED — opens the upgrade dialog
     if (!handleLimitError(e)) {
       errorMessage.value = e?.data?.message || e.message || 'Failed to start processing'
     }
@@ -181,7 +213,6 @@ async function confirmGenerate() {
 }
 
 async function downloadAsBlob(url: string, filename: string) {
-  // Must fetch as blob — browsers block <a download> for cross-origin URLs (Supabase signed URLs)
   const response = await fetch(url)
   const blob = await response.blob()
   const blobUrl = URL.createObjectURL(blob)
@@ -218,7 +249,6 @@ async function handleBatchDownload() {
       if (!url) continue
       const response = await fetch(url)
       const buffer = await response.arrayBuffer()
-      // Sanitize filename — remove characters not safe in ZIP/OS paths
       const safeName = short.title.replace(/[/\\?%*:|"<>]/g, '-') + '.mp4'
       files[safeName] = new Uint8Array(buffer)
     }
@@ -228,7 +258,6 @@ async function handleBatchDownload() {
       return
     }
 
-    // level: 0 = store only (no compression — videos are already compressed)
     const zipped = zipSync(files, { level: 0 })
     const blob = new Blob([zipped.buffer as ArrayBuffer], { type: 'application/zip' })
     const blobUrl = URL.createObjectURL(blob)
@@ -296,8 +325,6 @@ const hasSegments = computed(() => {
   return !!(currentJob.value?.segments && Array.isArray(currentJob.value.segments) && currentJob.value.segments.length > 0)
 })
 
-const showSegmentReview = computed(() => isDevMode && hasSegments.value)
-
 interface StepDef {
   step: number
   key: string
@@ -312,7 +339,6 @@ const stepDefinitions: StepDef[] = [
   { step: 4, key: 'processing_video', title: 'Create Shorts', description: 'Cropping, subtitles & upload' },
 ]
 
-// Backend statuses that map to the single display step 'processing_video'
 const CREATING_STEPS = ['processing_video', 'burning_subtitles', 'uploading']
 
 function toDisplayKey(status: string): string {
@@ -320,7 +346,6 @@ function toDisplayKey(status: string): string {
 }
 
 function getStepState(stepKey: string): 'completed' | 'active' | 'inactive' | 'error' {
-  // Sub-keys covered by this display step
   const subKeys = stepKey === 'processing_video' ? CREATING_STEPS : [stepKey]
 
   const steps = jobSteps.value
@@ -350,14 +375,6 @@ function getStepState(stepKey: string): 'completed' | 'active' | 'inactive' | 'e
   return 'inactive'
 }
 
-const currentStepNumber = computed(() => {
-  if (!currentJob.value) return 1
-  const status = currentJob.value.status
-  if (status === 'completed') return stepDefinitions.length + 1
-  const idx = stepDefinitions.findIndex(s => s.key === toDisplayKey(status))
-  return idx >= 0 ? idx + 1 : 1
-})
-
 const generateButtonLabel = computed(() => {
   if (!currentJob.value || currentJob.value.status !== 'failed') {
     return '\u{1F680} Generate Shorts'
@@ -381,157 +398,248 @@ function formatDuration(seconds: number | null | undefined): string {
   return m + ':' + String(s).padStart(2, '0')
 }
 
-// Subtitle preview styles for the vertical story preview
-const subtitlePreviewStyle = computed(() => {
-  const s = subtitleSettings.value
-  return {
-    fontFamily: s.fontName,
-    fontSize: `${Math.max(8, Math.min(s.fontSize, 32))}px`,
-    fontWeight: s.bold ? '700' : '400',
-    color: s.primaryColor,
-    textShadow: `
-      -${s.outline}px -${s.outline}px 0 ${s.outlineColor},
-       ${s.outline}px -${s.outline}px 0 ${s.outlineColor},
-      -${s.outline}px  ${s.outline}px 0 ${s.outlineColor},
-       ${s.outline}px  ${s.outline}px 0 ${s.outlineColor}
-    `,
-    textAlign: 'center' as const,
-    padding: '4px 8px',
-    lineHeight: '1.3',
+// Segments for visualization (from the job)
+const segments = computed<Segment[]>(() => {
+  if (!currentJob.value?.segments || !Array.isArray(currentJob.value.segments)) return []
+  return currentJob.value.segments as Segment[]
+})
+
+// Sort by duration descending so shorter segments end up later in DOM → higher natural stacking → get mouse priority
+const timelineSegments = computed(() =>
+  segments.value
+    .map((seg, idx) => ({ seg, idx }))
+    .sort((a, b) => (b.seg.end - b.seg.start) - (a.seg.end - a.seg.start))
+)
+
+// Auto-load original video when segments become available (e.g. after job completes)
+watch(segments, (segs) => {
+  if (segs.length > 0 && !originalVideoUrl.value) {
+    loadOriginalVideo()
   }
 })
+
+function closePreview() {
+  showPreview.value = false
+  previewUrl.value = ''
+}
+
+function _onPreviewKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') closePreview()
+}
+
+watch(showPreview, (open) => {
+  if (!import.meta.client) return
+  if (open) {
+    document.addEventListener('keydown', _onPreviewKey)
+    document.body.style.overflow = 'hidden'
+  } else {
+    document.removeEventListener('keydown', _onPreviewKey)
+    document.body.style.overflow = ''
+  }
+})
+
+async function seekToSegment(segment: Segment) {
+  activeSegmentIndex.value = segments.value.indexOf(segment)
+  if (!originalVideoUrl.value) {
+    await loadOriginalVideo()
+    await nextTick()
+  }
+  const videoEl = inlinePlayerRef.value
+  if (videoEl) {
+    activeSegmentEnd.value = segment.end
+    videoEl.currentTime = segment.start
+    videoEl.play()
+    videoEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
+}
 </script>
 
 <template>
-  <div class="max-w-5xl mx-auto space-y-8" @click.self="closeMenus">
-    <NuxtLink to="/dashboard" class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
+  <div class="max-w-5xl mx-auto space-y-6 pb-8" @click.self="closeMenus">
+    <!-- Back nav -->
+    <NuxtLink to="/dashboard" class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground py-1">
       &larr; Back to Dashboard
     </NuxtLink>
 
-    <div v-if="loading && !currentVideo" class="text-center py-12 text-muted-foreground">
-      Loading video...
-    </div>
+    <!-- ═══ SKELETON LOADER (initial page load) ═══ -->
+    <template v-if="loading && !currentVideo">
+      <!-- Hero skeleton -->
+      <div class="rounded-2xl border p-5 space-y-3">
+        <Skeleton class="h-8 w-2/3" />
+        <Skeleton class="h-5 w-24 rounded-full" />
+        <Skeleton class="h-4 w-44" />
+        <Skeleton class="h-3 w-52" />
+      </div>
 
-    <template v-else-if="currentVideo">
-      <!-- Video Header — compact -->
-      <div class="flex flex-col sm:flex-row gap-4 items-start">
-        <div
-          class="aspect-video w-full sm:w-56 rounded-lg bg-muted flex items-center justify-center flex-shrink-0 relative cursor-pointer group overflow-hidden"
-          @click="playOriginalVideo"
-        >
-          <span class="text-3xl group-hover:scale-110 transition-transform">&#x1F3AC;</span>
-          <!-- Play overlay -->
-          <div class="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
-            <div class="h-12 w-12 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
-              <Play class="size-5 text-black ml-0.5" />
-            </div>
-          </div>
-          <span v-if="loadingOriginalVideo" class="absolute inset-0 flex items-center justify-center bg-black/50">
-            <svg class="size-6 animate-spin text-white" viewBox="0 0 24 24" fill="none">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
-              <path class="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-            </svg>
-          </span>
+      <!-- Shorts list skeleton -->
+      <div class="space-y-3">
+        <Skeleton class="h-6 w-48" />
+        <!-- Filter row -->
+        <div class="flex gap-2">
+          <Skeleton class="h-8 w-28 rounded-lg" />
+          <Skeleton class="h-8 w-20 rounded-lg" />
         </div>
-        <div class="flex-1 space-y-2 min-w-0">
-          <div class="flex flex-wrap items-start justify-between gap-2">
-            <h1 class="text-xl font-bold truncate">{{ currentVideo.title }}</h1>
-            <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0" @click="showDeleteDialog = true">
-              <Trash2 class="size-4 mr-1" /> Delete
-            </Button>
+        <!-- List items -->
+        <div class="space-y-2">
+          <div v-for="i in 4" :key="i" class="flex items-center gap-3 p-3 rounded-lg border">
+            <div class="flex flex-col items-center gap-1 w-14 shrink-0">
+              <Skeleton class="h-5 w-10" />
+              <Skeleton class="h-3 w-6" />
+            </div>
+            <div class="flex-1 space-y-2">
+              <Skeleton class="h-4" :class="i % 2 === 0 ? 'w-3/4' : 'w-5/6'" />
+              <Skeleton class="h-3 w-16" />
+            </div>
+            <Skeleton class="h-8 w-20 rounded-md shrink-0" />
           </div>
-          <div class="flex flex-wrap gap-2 items-center">
-            <Badge :variant="currentVideo.status === 'completed' ? 'success' : 'secondary'">
-              {{ currentVideo.status }}
-            </Badge>
-            <span class="text-sm text-muted-foreground">
-              {{ new Date(currentVideo.created_at).toLocaleDateString() }}
-            </span>
-            <span v-if="currentVideo.duration" class="text-sm text-muted-foreground">
-              &middot; {{ formatDuration(currentVideo.duration) }}
-            </span>
-          </div>
-          <p class="text-xs text-muted-foreground truncate">{{ currentVideo.original_filename }}</p>
         </div>
       </div>
 
-      <div v-if="shorts.length > 0" class="space-y-5">
-        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div>
-            <h2 class="text-2xl font-bold flex items-center gap-2">
-              ✨ Generated Shorts
-            </h2>
+      <!-- Detected segments skeleton -->
+      <div class="space-y-3">
+        <Skeleton class="h-6 w-52" />
+        <Skeleton class="w-full h-10 rounded-lg" />
+        <div class="flex gap-2">
+          <Skeleton v-for="j in 3" :key="j" class="h-8 w-28 rounded-lg shrink-0" />
+        </div>
+      </div>
+    </template>
+
+    <template v-else-if="currentVideo">
+      <!-- ═══════════════ VIDEO HEADER HERO ═══════════════ -->
+      <div class="relative rounded-2xl overflow-hidden border bg-gradient-to-bl from-primary/[0.07] to-background  px-5 py-5">
+        <!-- Decorative blurred orbs -->
+        <div class="pointer-events-none absolute -top-12 -right-12 w-48 h-48 rounded-full bg-primary/10 blur-3xl" />
+        <div class="pointer-events-none absolute -bottom-10 -left-10 w-36 h-36 rounded-full bg-purple-500/10 blur-3xl" />
+
+        <div class="relative flex items-start justify-between gap-3">
+          <div class="min-w-0 space-y-2.5">
+            <h1 class="text-2xl font-extrabold leading-tight tracking-tight truncate">{{ currentVideo.title }}</h1>
+
+            <!-- Status pill -->
+            <div
+              class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold border"
+              :class="{
+                'bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400': currentVideo.status === 'completed',
+                'bg-yellow-500/10 border-yellow-500/30 text-yellow-700 dark:text-yellow-400': currentVideo.status === 'processing',
+                'bg-destructive/10 border-destructive/30 text-destructive': currentVideo.status === 'failed',
+                'bg-muted border-border text-muted-foreground': !['completed','processing','failed'].includes(currentVideo.status ?? ''),
+              }"
+            >
+              <span
+                class="w-1.5 h-1.5 rounded-full shrink-0"
+                :class="{
+                  'bg-green-500': currentVideo.status === 'completed',
+                  'bg-yellow-500 animate-pulse': currentVideo.status === 'processing',
+                  'bg-destructive': currentVideo.status === 'failed',
+                  'bg-muted-foreground': !['completed','processing','failed'].includes(currentVideo.status ?? ''),
+                }"
+              />
+              <span class="capitalize">{{ currentVideo.status }}</span>
+            </div>
+
+            <!-- Date · duration -->
+            <p class="text-sm text-muted-foreground">
+              {{ currentVideo.created_at ? new Date(currentVideo.created_at).toLocaleDateString() : '' }}<span v-if="currentVideo.duration"> · {{ formatDuration(currentVideo.duration) }}</span>
+            </p>
+
+            <!-- Filename -->
+            <p class="text-xs text-muted-foreground/60 font-mono truncate">{{ currentVideo.original_filename }}</p>
           </div>
-          <div class="flex items-center gap-2">
-            <!-- Duration filter buttons -->
+
+          <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0" @click="showDeleteDialog = true">
+            <Trash2 class="size-4" />
+            <span class="hidden sm:inline ml-1">Delete</span>
+          </Button>
+        </div>
+      </div>
+
+      <!-- ═══════════════ GENERATED SHORTS ═══════════════ -->
+      <div v-if="shorts.length > 0" class="space-y-4">
+        <!-- Header row -->
+        <div class="flex flex-col gap-3">
+          <div class="flex items-center flex-col sm:flex-row justify-between gap-2">
+            <h2 class="text-xl font-bold flex items-center gap-2">✨ Generated Shorts <span class="text-base font-normal text-muted-foreground">({{ shorts.length }})</span></h2>
+                    <!-- Batch Download -->
+        <Button variant="outline" class="w-full sm:w-auto gap-2" @click="handleBatchDownload" :disabled="batchDownloading">
+          <Download class="size-4" />
+          {{ batchDownloading ? 'Downloading...' : `Download All Shorts` }}
+        </Button>
+
+
+          </div>
+          
+          <!-- Filters row -->
+          <div class="flex items-center gap-2 flex-wrap">
             <div class="flex items-center gap-1 rounded-lg bg-muted p-1">
               <button
                 v-for="opt in durationOptions"
                 :key="opt.value"
-                class="px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer"
+                class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer"
                 :class="durationFilter === opt.value ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
                 @click="durationFilter = opt.value"
               >
                 {{ opt.label }}
               </button>
             </div>
+                        <!-- View toggle -->
+            <div class="flex items-center gap-1 rounded-lg bg-muted p-1">
+              <button
+                class="p-1.5 rounded-md transition-colors cursor-pointer"
+                :class="viewMode === 'card' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+                title="Card view"
+                @click="viewMode = 'card'"
+              >
+                <LayoutGrid class="size-4" />
+              </button>
+              <button
+                class="p-1.5 rounded-md transition-colors cursor-pointer"
+                :class="viewMode === 'list' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+                title="List view"
+                @click="viewMode = 'list'"
+              >
+                <List class="size-4" />
+              </button>
+            </div>
             <button
-              class="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground cursor-pointer px-2 py-1 rounded-md hover:bg-muted transition-colors"
+              class="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground cursor-pointer px-2 py-1.5 rounded-md hover:bg-muted transition-colors"
               @click="sortMode = sortMode === 'score' ? 'chronological' : 'score'"
             >
               <ArrowDownUp class="size-4" />
-              {{ sortMode === 'score' ? 'By viral score' : 'Chronological' }}
+              <span class="text-xs">{{ sortMode === 'score' ? 'Viral score' : 'Chronological' }}</span>
             </button>
           </div>
         </div>
 
         <!-- No results for current filter -->
         <div v-if="filteredShorts.length === 0 && shorts.length > 0" class="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
-          <p>No shorts match the <strong>{{ durationFilter }}</strong> duration filter.</p>
-          <button class="mt-2 text-sm text-primary hover:underline cursor-pointer" @click="durationFilter = 'all'">Show all shorts</button>
+          <p>No shorts match the <strong>{{ durationFilter }}</strong> filter.</p>
+          <button class="mt-2 text-sm text-primary hover:underline cursor-pointer" @click="durationFilter = 'all'">Show all</button>
         </div>
 
-        <!-- Batch Download Button — always visible when shorts exist -->
-        <div class="flex flex-wrap gap-3">
-          <Button size="lg" @click="handleBatchDownload" :disabled="batchDownloading" class="gap-2">
-            <Download class="size-4" />
-            {{ batchDownloading ? 'Downloading...' : `Download All ${filteredShorts.length} Shorts` }}
-          </Button>
-        </div>
 
-        <!-- Shorts Grid — vertical story cards -->
-        <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <!-- ══ CARD VIEW ══ -->
+        <div v-if="viewMode === 'card'" class="grid gap-4 grid-cols-2 lg:grid-cols-3">
           <Card v-for="short in filteredShorts" :key="short.id" class="group relative border-2 hover:border-primary/50 transition-colors">
             <CardContent class="p-0">
-              <!-- Vertical Story Preview -->
               <div
                 class="relative aspect-[9/16] bg-gradient-to-b from-slate-800 via-slate-900 to-black flex flex-col items-center justify-end overflow-hidden rounded-t-lg cursor-pointer"
                 @click="handlePlayShort(short.id, short.title)"
               >
-                <!-- Play overlay -->
                 <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10">
                   <div class="h-16 w-16 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
                     <Play class="size-8 text-black ml-1" />
                   </div>
                 </div>
-
-                <!-- Phone frame indicators -->
                 <div class="absolute top-3 left-1/2 -translate-x-1/2 w-16 h-1 rounded-full bg-white/20" />
-
-                <!-- Thumbnail if available, else placeholder -->
                 <template v-if="thumbnailUrls[short.id]">
                   <img :src="thumbnailUrls[short.id]" :alt="short.title" class="absolute inset-0 w-full h-full object-cover opacity-80" />
                 </template>
                 <template v-else>
                   <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 opacity-25">
                     <span class="text-4xl">📱</span>
-                    <span class="text-xs text-white">{{ short.title.slice(0, 20) }}</span>
                   </div>
                 </template>
-
-
-
-                <!-- Viral score badge -->
                 <div v-if="short.score" class="absolute top-3 right-3 z-20">
                   <Badge
                     :variant="short.score > 0.8 ? 'default' : short.score > 0.5 ? 'secondary' : 'outline'"
@@ -542,24 +650,22 @@ const subtitlePreviewStyle = computed(() => {
                   </Badge>
                 </div>
               </div>
-
-              <!-- Short Info -->
               <div class="p-3 space-y-2">
                 <div class="flex items-start justify-between gap-2">
                   <h3 class="font-semibold text-sm leading-tight flex-1 line-clamp-2">{{ short.title }}</h3>
                   <div class="relative" @click.stop>
-                    <button class="p-1 rounded hover:bg-muted cursor-pointer" @click="toggleMenu(short.id)">
+                    <button class="p-1.5 rounded hover:bg-muted cursor-pointer" @click="toggleMenu(short.id)">
                       <MoreVertical class="size-4 text-muted-foreground" />
                     </button>
-                    <div v-if="activeMenuShortId === short.id" class="absolute right-0 top-8 z-50 min-w-[160px] rounded-md border bg-popover p-1 shadow-md">
-                      <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm hover:bg-accent cursor-pointer" @click="handlePlayShort(short.id, short.title); activeMenuShortId = null">
-                        <Play class="size-4" /> Play
+                    <div v-if="activeMenuShortId === short.id" class="absolute right-0 top-9 z-50 min-w-[160px] rounded-md border bg-popover p-1 shadow-md">
+                      <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm hover:bg-accent cursor-pointer" @click="handlePlayShort(short.id, short.title); activeMenuShortId = null">
+                        <Play class="size-4" /> Preview
                       </button>
-                      <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm hover:bg-accent cursor-pointer" @click="handleDownload(short.id, short.title); activeMenuShortId = null">
+                      <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm hover:bg-accent cursor-pointer" @click="handleDownload(short.id, short.title); activeMenuShortId = null">
                         <Download class="size-4" /> Download
                       </button>
                       <hr class="my-1 border-border" />
-                      <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm text-destructive hover:bg-destructive/10 cursor-pointer" @click="handleDeleteShort(short.id); activeMenuShortId = null">
+                      <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 cursor-pointer" @click="handleDeleteShort(short.id); activeMenuShortId = null">
                         <Trash2 class="size-4" /> Delete
                       </button>
                     </div>
@@ -569,100 +675,178 @@ const subtitlePreviewStyle = computed(() => {
                   <p class="text-xs text-muted-foreground">
                     {{ formatDuration(short.duration) }} &middot; {{ short.width }}&times;{{ short.height }}
                   </p>
-                  <Button variant="outline" size="sm" class="h-7 text-xs gap-1" @click.stop="handleDownload(short.id, short.title)">
-                    <Download class="size-3" /> Download
-                  </Button>
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        <!-- Bottom batch download (always available after generation) -->
-        <div class="flex justify-center pt-2">
-          <Button variant="outline" size="lg" @click="handleBatchDownload" :disabled="batchDownloading" class="gap-2">
-            <Download class="size-4" />
-            {{ batchDownloading ? 'Downloading...' : `Download All ${filteredShorts.length} Shorts` }}
-          </Button>
+        <!-- ══ LIST VIEW ══ -->
+        <div v-if="viewMode === 'list'" class="space-y-2">
+          <div
+            v-for="short in filteredShorts"
+            :key="short.id"
+            class="group cursor-pointer flex items-center gap-3 p-3 rounded-lg border hover:border-primary/50 transition-colors active:bg-muted/40"
+            @click="handlePlayShort(short.id, short.title)"
+          >
+            <!-- Viral score + duration -->
+            <div class="flex flex-col items-center justify-center gap-0.5 w-14 shrink-0 text-center">
+              <span
+                v-if="short.score"
+                class="text-base font-extrabold tabular-nums leading-none"
+                :class="short.score > 0.8 ? 'text-green-600 dark:text-green-400' : short.score > 0.5 ? 'text-yellow-600 dark:text-yellow-400' : 'text-muted-foreground'"
+              >{{ Math.round(short.score * 100) }}%</span>
+              <span v-if="short.score" class="text-[9px] uppercase tracking-wide text-muted-foreground font-medium leading-none">viral</span>
+              <span class="text-[11px] text-muted-foreground font-mono mt-1">{{ formatDuration(short.duration) }}</span>
+            </div>
+
+            <!-- Info -->
+            <div class="flex-1 min-w-0">
+              <h3 class="font-medium text-sm leading-snug line-clamp-2">{{ short.title }}</h3>
+              <p class="text-xs text-muted-foreground mt-0.5">{{ short.width }}&times;{{ short.height }}</p>
+            </div>
+
+            <!-- Actions: Preview button + kebab menu -->
+            <div class="flex items-center gap-1 shrink-0" @click.stop>
+              <Button variant="outline" size="sm" class="hidden sm:flex h-9 px-3 text-xs gap-1.5" @click="handlePlayShort(short.id, short.title)">
+                <Play class="size-3.5" /> Preview
+              </Button>
+              <div class="relative">
+                <button class="p-2 rounded-lg hover:bg-muted cursor-pointer" @click="toggleMenu(short.id)">
+                  <MoreVertical class="size-4 text-muted-foreground" />
+                </button>
+                <div v-if="activeMenuShortId === short.id" class="absolute right-0 top-10 z-50 min-w-[150px] rounded-md border bg-popover p-1 shadow-md">
+                           <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm hover:bg-accent cursor-pointer" @click="handlePlayShort(short.id, short.title)">
+                    <Play class="size-4" /> Preview
+                  </button>
+                  <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm hover:bg-accent cursor-pointer" @click="handleDownload(short.id, short.title); activeMenuShortId = null">
+                    <Download class="size-4" /> Download
+                  </button>
+                  <hr class="my-1 border-border" />
+                  <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 cursor-pointer" @click="handleDeleteShort(short.id); activeMenuShortId = null">
+                    <Trash2 class="size-4" /> Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="text-center py-6">
+                                      <!-- Batch Download -->
+        <Button variant="secondary" class="w-full sm:w-auto gap-2" @click="handleBatchDownload" :disabled="batchDownloading">
+          <Download class="size-4" />
+          {{ batchDownloading ? 'Downloading...' : `Download All ${filteredShorts.length} Shorts` }}
+        </Button>
+        </div>
+
+      </div>
+
+      <!-- ═══════════════ DETECTED SEGMENTS + INLINE PLAYER ═══════════════ -->
+      <div v-if="segments.length > 0 && currentVideo.duration" class="space-y-3">
+        <div class="flex items-center gap-2 flex-wrap">
+          <h3 class="text-base font-semibold flex items-center gap-2">
+            🎯 Detected Segments
+            <span class="text-sm font-normal text-muted-foreground">({{ segments.length }})</span>
+          </h3>
+          <span v-if="loadingOriginalVideo" class="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <svg class="size-3 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
+              <path class="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+            Loading video…
+          </span>
+        </div>
+
+        <!-- Inline video player (no dialog) -->
+        <!-- Skeleton while the signed URL is being fetched -->
+        <Skeleton v-if="loadingOriginalVideo && !originalVideoUrl" class="w-full aspect-video rounded-xl" />
+        <div v-else-if="originalVideoUrl" class="rounded-xl overflow-hidden bg-black shadow-lg">
+          <video
+            ref="inlinePlayerRef"
+            id="original-video-player"
+            :src="originalVideoUrl"
+            controls
+            playsinline
+            class="w-full aspect-video object-contain"
+          />
+        </div>
+
+        <!-- Visual timeline bar (two layers: clipped bars + free-floating tooltips) -->
+        <div class="relative h-10 my-1">
+          <!-- Layer 1: colored bars — inside overflow-hidden so they respect the rounded corners -->
+          <div class="absolute inset-0 rounded-lg bg-muted border overflow-hidden">
+            <div
+              v-for="({ seg, idx }, sortOrder) in timelineSegments"
+              :key="`bar-${idx}`"
+              class="absolute top-0 h-full border-r border-background/40 transition-colors duration-150"
+              :class="activeSegmentIndex === idx
+                ? 'bg-red-500'
+                : seg.score > 0.8
+                  ? 'bg-green-500/70'
+                  : seg.score > 0.5
+                    ? 'bg-yellow-500/70'
+                    : 'bg-orange-500/70'"
+              :style="{
+                left: `${(seg.start / currentVideo.duration!) * 100}%`,
+                width: `${Math.max(((seg.end - seg.start) / currentVideo.duration!) * 100, 1.5)}%`,
+                zIndex: activeSegmentIndex === idx ? 50 : sortOrder + 1,
+              }"
+            />
+          </div>
+          <!-- Layer 2: invisible hit-areas + tooltips — NOT overflow-hidden so tooltips float above -->
+          <div
+            v-for="({ seg, idx }, sortOrder) in timelineSegments"
+            :key="`hit-${idx}`"
+            class="absolute top-0 h-full cursor-pointer group/seg hover:bg-white/15"
+            :style="{
+              left: `${(seg.start / currentVideo.duration!) * 100}%`,
+              width: `${Math.max(((seg.end - seg.start) / currentVideo.duration!) * 100, 1.5)}%`,
+              zIndex: activeSegmentIndex === idx ? 50 : sortOrder + 1,
+            }"
+            @click="seekToSegment(seg)"
+          >
+            <!-- Tooltip: lives outside overflow-hidden so it is never clipped -->
+            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/seg:block z-[100] pointer-events-none">
+              <div class="bg-popover text-popover-foreground border rounded-md shadow-md px-2.5 py-1.5 text-xs whitespace-nowrap">
+                <p class="font-semibold">{{ seg.title }}</p>
+                <p class="text-muted-foreground mt-0.5">{{ formatDuration(seg.start) }} → {{ formatDuration(seg.end) }} · 🔥 {{ Math.round(seg.score * 100) }}%</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Segment pills (scrollable on mobile) -->
+        <div class="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 snap-x">
+          <button
+            v-for="(seg, i) in segments"
+            :key="i"
+            class="inline-flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border cursor-pointer transition-all shrink-0 snap-start active:scale-95"
+            :class="activeSegmentIndex === i
+              ? 'bg-red-500/10 border-red-500/50 text-red-600 dark:text-red-400 font-medium'
+              : 'hover:bg-accent'"
+            @click="seekToSegment(seg)"
+          >
+            <span
+              class="inline-block w-2 h-2 rounded-full shrink-0 transition-colors"
+              :class="activeSegmentIndex === i
+                ? 'bg-red-500'
+                : seg.score > 0.8 ? 'bg-green-500' : seg.score > 0.5 ? 'bg-yellow-500' : 'bg-orange-500'"
+            />
+            <span class="truncate max-w-[100px]">{{ seg.title }}</span>
+            <span class="font-mono transition-colors" :class="activeSegmentIndex === i ? 'text-red-500/70' : 'text-muted-foreground'">{{ formatDuration(seg.start) }}</span>
+          </button>
         </div>
       </div>
 
-      <!-- Delete Confirmation Dialog -->
-      <Dialog :open="showDeleteDialog" @update:open="showDeleteDialog = $event">
-        <div class="space-y-4">
-          <div class="space-y-2">
-            <h2 class="text-lg font-semibold">Delete Video?</h2>
-            <p class="text-sm text-muted-foreground">
-              Are you sure you want to delete <strong>{{ currentVideo.title }}</strong>?
-              This will permanently remove the video and all generated shorts. This action cannot be undone.
-            </p>
-          </div>
-          <div class="flex justify-end gap-3">
-            <Button variant="ghost" :disabled="deleting" @click="showDeleteDialog = false">Cancel</Button>
-            <Button variant="destructive" :disabled="deleting" @click="handleDelete">
-              {{ deleting ? 'Deleting\u2026' : '\u{1F5D1} Yes, Delete' }}
-            </Button>
-          </div>
-        </div>
-      </Dialog>
-
-      <!-- Video Preview Modal — vertical story format -->
-      <Dialog :open="showPreview" @update:open="(v: boolean) => { showPreview = v; if(!v) previewUrl = '' }">
-        <div class="space-y-4">
-          <h2 class="text-lg font-semibold">{{ previewTitle }}</h2>
-          <div class="flex justify-center">
-            <div class="relative bg-black rounded-2xl overflow-hidden shadow-2xl" style="max-width: 360px; width: 100%;">
-              <!-- Phone-like frame -->
-              <div class="absolute top-0 left-0 right-0 h-6 bg-black z-10 flex items-center justify-center">
-                <div class="w-16 h-1 rounded-full bg-white/20" />
-              </div>
-              <video
-                v-if="previewUrl"
-                :src="previewUrl"
-                controls
-                autoplay
-                playsinline
-                class="w-full aspect-[9/16] object-contain"
-              />
-            </div>
-          </div>
-          <div class="flex justify-end">
-            <Button variant="ghost" @click="showPreview = false">Close</Button>
-          </div>
-        </div>
-      </Dialog>
-
-      <!-- Original Video Player Modal — 16:9 landscape -->
-      <Dialog :open="showOriginalPlayer" @update:open="(v: boolean) => { showOriginalPlayer = v; if(!v) originalVideoUrl = '' }">
-        <div class="space-y-4">
-          <h2 class="text-lg font-semibold">{{ currentVideo?.title }} — Original</h2>
-          <div class="flex justify-center">
-            <div class="relative bg-black rounded-xl overflow-hidden shadow-2xl w-full" style="max-width: 720px;">
-              <video
-                v-if="originalVideoUrl"
-                :src="originalVideoUrl"
-                controls
-                autoplay
-                playsinline
-                class="w-full aspect-video object-contain"
-              />
-            </div>
-          </div>
-          <div class="flex justify-end">
-            <Button variant="ghost" @click="showOriginalPlayer = false">Close</Button>
-          </div>
-        </div>
-      </Dialog>
-
-      <!-- ════════════════════════════════════════════════ -->
-      <!-- Processing Status (shown only during processing) -->
-      <!-- ════════════════════════════════════════════════ -->
-      <Card v-if="currentJob && !['completed', 'failed'].includes(currentJob.status)">
-        <CardHeader>
-          <CardTitle>⏳ Processing Your Video</CardTitle>
+      <!-- ═══════════════ PROCESSING STATUS ═══════════════ -->
+      <!-- Hidden once shorts are available — job is clearly done -->
+      <Card v-if="currentJob && !['completed', 'failed'].includes(currentJob.status) && shorts.length === 0">
+        <CardHeader class="pb-3">
+          <CardTitle class="text-base">⏳ Processing Your Video</CardTitle>
           <CardDescription>This may take a few minutes depending on video length.</CardDescription>
         </CardHeader>
-        <CardContent class="space-y-6">
+        <CardContent class="space-y-5">
           <div class="space-y-2">
             <div class="flex items-center justify-between text-sm">
               <span class="font-medium">{{ getJobStatusLabel(currentJob.status) }}</span>
@@ -670,15 +854,12 @@ const subtitlePreviewStyle = computed(() => {
             </div>
             <Progress :model-value="jobProgress" class="w-full" />
           </div>
-
-          <!-- Custom left-aligned step list (replaces Radix Stepper to avoid centering/reset issues) -->
-          <div class="space-y-2">
+          <div class="space-y-3">
             <div
               v-for="item in stepDefinitions"
               :key="item.key"
               class="flex items-center gap-3"
             >
-              <!-- Step indicator -->
               <div
                 class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors"
                 :class="{
@@ -696,7 +877,6 @@ const subtitlePreviewStyle = computed(() => {
                 <span v-else-if="getStepState(item.key) === 'error'" class="text-xs font-bold">✕</span>
                 <span v-else class="text-xs font-bold">{{ item.step }}</span>
               </div>
-              <!-- Step label -->
               <div class="flex-1">
                 <div
                   class="text-sm font-medium leading-tight"
@@ -714,30 +894,24 @@ const subtitlePreviewStyle = computed(() => {
             </div>
           </div>
         </CardContent>
-                <!-- 'Come back later' hint -->
-        <div class="mx-6 mb-6 pb-2  flex items-start gap-2 rounded-lg bg-muted/60 border border-border px-3 py-2.5 text-sm text-muted-foreground">
+        <div class="mx-6 mb-6 flex items-start gap-2 rounded-lg bg-muted/60 border border-border px-3 py-2.5 text-sm text-muted-foreground">
           <span class="text-base leading-none mt-0.5">💡</span>
-          <span>You can <strong class="text-foreground">close this page and come back later</strong> — processing continues in the background and your shorts will be ready here when done.</span>
+          <span>You can <strong class="text-foreground">close this page and come back later</strong> — processing continues in the background.</span>
         </div>
       </Card>
 
-      <!-- ════════════════════════════════════════════════ -->
-      <!-- Generate / Retry Section                        -->
-      <!-- ════════════════════════════════════════════════ -->
-      <Card v-if="!currentJob || currentJob.status === 'failed' || currentJob.status === 'completed'">
-        <CardHeader>
-          <CardTitle>{{ currentJob?.status === 'failed' ? '🔄 Retry Generation' : currentJob?.status === 'completed' ? '🔄 Regenerate Shorts' : '🚀 Generate Shorts' }}</CardTitle>
-          <CardDescription>
-            {{ currentJob?.status === 'completed' ? 'Want different results? Adjust duration and regenerate.' : 'Select a duration and let AI find the best moments.' }}
-          </CardDescription>
+      <!-- ═══════════════ GENERATE / RETRY ═══════════════ -->
+      <Card v-if="showGenerateSection">
+        <CardHeader class="pb-3">
+          <CardTitle>{{ currentJob?.status === 'failed' ? '🔄 Retry Generation' : '🚀 Generate Shorts' }}</CardTitle>
+          <CardDescription>Let AI find the best moments and create vertical shorts automatically.</CardDescription>
         </CardHeader>
-        <CardContent class="space-y-6">
-          <div class="rounded-lg border border-dashed p-3 flex items-center gap-2 text-sm">
+        <CardContent class="space-y-5">
+          <div class="rounded-lg border border-dashed p-3 flex items-start gap-2 text-sm">
             <span>✨</span>
-            <span class="text-muted-foreground">AI will automatically detect the best passages and choose the optimal duration for each short (15–90s).</span>
+            <span class="text-muted-foreground">AI automatically detects the best passages and chooses the optimal duration for each short (15–90s).</span>
           </div>
 
-          <!-- Current subtitle style indicator -->
           <div class="rounded-lg border border-dashed p-3 flex items-center justify-between gap-3">
             <div class="flex items-center gap-2 text-sm">
               <span>🎨</span>
@@ -751,7 +925,6 @@ const subtitlePreviewStyle = computed(() => {
             </NuxtLink>
           </div>
 
-          <!-- Error from previous attempt -->
           <div v-if="currentJob?.status === 'failed'" class="space-y-3">
             <div class="rounded-md bg-destructive/10 p-3 text-sm text-destructive space-y-1">
               <p class="font-medium">
@@ -787,45 +960,86 @@ const subtitlePreviewStyle = computed(() => {
         </CardContent>
       </Card>
 
-      <!-- ════════════════════════════════════════════════ -->
-      <!-- Transcript Downloads — visible as soon as audio  -->
-      <!-- is transcribed, even while job is still running  -->
-      <!-- ════════════════════════════════════════════════ -->
+      <!-- ═══════════════ TRANSCRIPT DOWNLOADS ═══════════════ -->
       <Card v-if="hasTranscript()" class="border-dashed">
-        <CardHeader>
+        <CardHeader class="pb-3">
           <CardTitle class="flex items-center gap-2 text-base">
             📝 Subtitles &amp; Transcript
             <Badge variant="secondary" class="text-xs">Available</Badge>
-            <!-- Show a subtle 'ready during processing' badge -->
-            <Badge
-              v-if="currentJob && !['completed', 'failed'].includes(currentJob.status)"
-              variant="outline"
-              class="text-xs text-green-600 border-green-500"
-            >
-              ✅ Transcription done
-            </Badge>
           </CardTitle>
           <CardDescription v-if="currentJob && !['completed', 'failed'].includes(currentJob.status)">
             Audio has been transcribed — you can already download the subtitles while the video finishes processing.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div class="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" @click="downloadTranscriptSrt()">⬇️ .SRT</Button>
-            <Button variant="outline" size="sm" @click="downloadTranscriptVtt()">⬇️ .VTT</Button>
-            <Button variant="outline" size="sm" @click="downloadTranscriptJson()">📄 Transcript</Button>
-            <Button v-if="hasSegments" variant="outline" size="sm" @click="downloadSegmentsJson()">🤖 Segments</Button>
+          <div class="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+            <Button variant="outline" size="sm" class="justify-center" @click="downloadTranscriptSrt()">⬇️ .SRT</Button>
+            <Button variant="outline" size="sm" class="justify-center" @click="downloadTranscriptVtt()">⬇️ .VTT</Button>
+            <Button variant="outline" size="sm" class="justify-center" @click="downloadTranscriptJson()">📄 Transcript</Button>
+            <Button v-if="hasSegments" variant="outline" size="sm" class="justify-center" @click="downloadSegmentsJson()">🤖 Segments</Button>
           </div>
         </CardContent>
       </Card>
 
-      <!-- Dev Mode: Segment Review -->
-      <SegmentReview
-        v-if="showSegmentReview"
-        :segments="(currentJob!.segments as any)"
-        :video-title="currentVideo.title"
-        @select-segments="devSelectedSegments = $event"
-      />
+      <!-- Delete Confirmation Dialog -->
+      <Dialog :open="showDeleteDialog" @update:open="showDeleteDialog = $event">
+        <div class="space-y-4">
+          <div class="space-y-2">
+            <h2 class="text-lg font-semibold">Delete Video?</h2>
+            <p class="text-sm text-muted-foreground">
+              Are you sure you want to delete <strong>{{ currentVideo.title }}</strong>?
+              This will permanently remove the video and all generated shorts. This action cannot be undone.
+            </p>
+          </div>
+          <div class="flex flex-col sm:flex-row justify-end gap-3">
+            <Button variant="ghost" :disabled="deleting" @click="showDeleteDialog = false">Cancel</Button>
+            <Button variant="destructive" :disabled="deleting" @click="handleDelete">
+              {{ deleting ? 'Deleting\u2026' : '\u{1F5D1} Yes, Delete' }}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      <!-- Short Preview — full-screen on mobile · blurred float on desktop -->
+      <Teleport to="body">
+        <Transition name="short-preview">
+          <div v-if="showPreview" class="fixed inset-0 z-[9999]">
+
+            <!-- Backdrop: solid black on mobile, blurred dim on desktop -->
+            <div
+              class="absolute inset-0 bg-black sm:bg-black/75 sm:backdrop-blur-2xl"
+              @click="closePreview"
+            />
+
+            <!-- Close button -->
+            <button
+              class="absolute top-4 right-4 z-[60] w-10 h-10 rounded-full bg-white/15 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center text-white transition-colors cursor-pointer"
+              aria-label="Close preview"
+              @click="closePreview"
+            >
+              <X class="size-5" />
+            </button>
+
+            <!-- Title — desktop only -->
+            <div class="absolute top-5 left-5 right-16 z-[60] hidden sm:block pointer-events-none">
+              <p class="text-white/75 text-sm font-semibold truncate">{{ previewTitle }}</p>
+            </div>
+
+            <!-- Video: fills viewport on mobile; centered 9:16 pill on desktop -->
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none sm:p-8">
+              <video
+                v-if="previewUrl"
+                :src="previewUrl"
+                controls
+                autoplay
+                playsinline
+                class="pointer-events-auto w-full h-full object-contain sm:h-auto sm:w-auto sm:max-h-[90vh] sm:max-w-[min(320px,42vw)] sm:rounded-2xl sm:shadow-[0_8px_80px_rgba(0,0,0,0.95)]"
+              />
+            </div>
+
+          </div>
+        </Transition>
+      </Teleport>
     </template>
 
     <!-- Upgrade Dialog (triggered by backend 429) -->
@@ -838,3 +1052,16 @@ const subtitlePreviewStyle = computed(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.short-preview-enter-active {
+  transition: opacity 0.22s ease;
+}
+.short-preview-leave-active {
+  transition: opacity 0.18s ease;
+}
+.short-preview-enter-from,
+.short-preview-leave-to {
+  opacity: 0;
+}
+</style>

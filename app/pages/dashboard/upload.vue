@@ -42,7 +42,7 @@ function handleFileInput(e: Event) {
   if (file) selectFile(file)
 }
 
-function selectFile(file: File) {
+async function selectFile(file: File) {
   const validTypes = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm', 'video/x-matroska']
   const limitBytes = uploadLimitBytes.value
 
@@ -59,35 +59,26 @@ function selectFile(file: File) {
   }
 
   selectedFile.value = file
-}
 
-function clearFile() {
-  selectedFile.value = null
-  errorMessage.value = ''
-}
-
-async function handleUpload() {
-  if (!selectedFile.value) return
-
+  // Auto-upload immediately after validation
   uploading.value = true
   uploadProgress.value = 0
-  errorMessage.value = ''
 
   try {
     const progressInterval = setInterval(() => {
       if (uploadProgress.value < 90) uploadProgress.value += 10
     }, 500)
 
-    const video = await uploadVideo(selectedFile.value) as any
+    const video = await uploadVideo(file) as any
     clearInterval(progressInterval)
     uploadProgress.value = 100
     await navigateTo(`/dashboard/videos/${video.id}`)
   } catch (e: any) {
-    // Let the composable check for LIMIT_REACHED — opens the upgrade dialog
     if (!handleLimitError(e)) {
       errorMessage.value = e?.data?.message || e.message || 'Upload failed. Please try again.'
     }
     uploading.value = false
+    selectedFile.value = null
   }
 }
 
@@ -108,9 +99,9 @@ function formatFileSize(bytes: number): string {
     <Card>
       <CardContent class="pt-6 space-y-4">
 
-        <!-- Drop Zone (shown when no file selected) -->
+        <!-- Drop Zone (shown when not uploading) -->
         <div
-          v-if="!selectedFile"
+          v-if="!uploading"
           class="border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors"
           :class="dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50'"
           @dragover="handleDragOver"
@@ -129,6 +120,7 @@ function formatFileSize(bytes: number): string {
             <div class="text-5xl">📤</div>
             <div>
               <p class="text-lg font-medium">Drop your video here or click to browse</p>
+              <p class="text-sm text-muted-foreground mt-1">Upload starts automatically</p>
               <p class="text-sm text-muted-foreground mt-1">
                 MP4, MOV, AVI, WebM, MKV ·
                 <span v-if="uploadLimitInfo">
@@ -141,31 +133,20 @@ function formatFileSize(bytes: number): string {
           </div>
         </div>
 
-        <!-- Selected File Preview -->
-        <div v-if="selectedFile" class="flex items-center gap-4 p-4 rounded-lg bg-muted">
-          <span class="text-3xl">🎬</span>
-          <div class="flex-1 min-w-0">
-            <p class="font-medium truncate">{{ selectedFile.name }}</p>
-            <p class="text-sm text-muted-foreground">{{ formatFileSize(selectedFile.size) }}</p>
+        <!-- Uploading State -->
+        <div v-if="uploading" class="space-y-4">
+          <div class="flex items-center gap-4 p-4 rounded-lg bg-muted">
+            <span class="text-3xl">🎬</span>
+            <div class="flex-1 min-w-0">
+              <p class="font-medium truncate">{{ selectedFile?.name }}</p>
+              <p class="text-sm text-muted-foreground">{{ selectedFile ? formatFileSize(selectedFile.size) : '' }}</p>
+            </div>
           </div>
-          <Button variant="ghost" size="sm" :disabled="uploading" @click="clearFile">✕</Button>
+          <div class="space-y-2">
+            <Progress :model-value="uploadProgress" />
+            <p class="text-sm text-muted-foreground text-center">Uploading... {{ uploadProgress }}%</p>
+          </div>
         </div>
-
-        <!-- Upload Progress -->
-        <div v-if="uploading" class="space-y-2">
-          <Progress :model-value="uploadProgress" />
-          <p class="text-sm text-muted-foreground text-center">Uploading... {{ uploadProgress }}%</p>
-        </div>
-
-        <!-- Upload Button -->
-        <Button
-          v-if="selectedFile && !uploading"
-          class="w-full"
-          size="lg"
-          @click="handleUpload"
-        >
-          🚀 Upload & Continue
-        </Button>
 
         <!-- Error Message -->
         <div v-if="errorMessage" class="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
