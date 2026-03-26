@@ -40,7 +40,7 @@ watch(
       <!-- Hero Content -->
       <div class="container mx-auto px-4 py-24 text-center">
         <div class="mx-auto max-w-3xl space-y-6">
-          <div class="inline-flex items-center rounded-full border px-4 py-1.5 text-sm font-medium">
+          <div class="inline-flex items-center rounded-full bg-primary/10 border border-primary/20 px-4 py-1.5 text-sm font-semibold text-primary">
             ✨ AI-Powered Video Processing
           </div>
 
@@ -193,65 +193,123 @@ watch(
     <!-- Features -->
     <section id="features" class="border-t py-24">
       <div class="container mx-auto px-4">
-        <div class="text-center mb-12">
+        <div class="text-center mb-16">
+          <div class="inline-flex items-center rounded-full bg-primary/10 border border-primary/20 px-3 py-1 text-xs font-semibold text-primary uppercase tracking-wider mb-5">
+            ✦ What ClipMafia Offers
+          </div>
           <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Everything included in every plan</h2>
           <p class="mt-4 text-lg text-muted-foreground max-w-xl mx-auto">
-            Every feature is unlocked from day one — no hidden add-ons.
+            No hidden add-ons, no locked features. Every AI capability is unlocked from day one.
           </p>
         </div>
-        <div class="max-w-4xl mx-auto rounded-2xl border bg-muted/30 px-6 py-10">
-          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-8">
-            <div class="flex flex-col items-center text-center gap-2.5">
-              <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-3xl shrink-0">🧠</div>
-              <div>
-                <p class="text-sm font-semibold leading-tight">Viral Detection</p>
-                <p class="text-xs text-muted-foreground mt-1 leading-snug">AI ranks every moment by engagement potential</p>
-              </div>
+        <div class="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <!-- Viral Detection -->
+          <div class="rounded-2xl border bg-card p-6 space-y-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center text-2xl">🧠</div>
+            <div>
+              <h3 class="font-semibold text-base">AI Viral Detection</h3>
+              <p class="text-sm text-muted-foreground mt-1.5 leading-relaxed">
+                Our AI analyzes every second and scores each segment by engagement potential — so only your best moments become Shorts.
+              </p>
             </div>
-            <div class="flex flex-col items-center text-center gap-2.5">
-              <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-3xl shrink-0">✍️</div>
-              <div>
-                <p class="text-sm font-semibold leading-tight">Auto Subtitles</p>
-                <p class="text-xs text-muted-foreground mt-1 leading-snug">Burned-in captions with fully customisable style</p>
-              </div>
+          </div>
+          <!-- Auto Subtitles -->
+          <div class="rounded-2xl border bg-card p-6 space-y-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center text-2xl">✍️</div>
+            <div>
+              <h3 class="font-semibold text-base">Auto Subtitles</h3>
+              <p class="text-sm text-muted-foreground mt-1.5 leading-relaxed">
+                Burned-in captions powered by Deepgram AI. High accuracy, multi-language support, always in sync.
+              </p>
             </div>
-            <div class="flex flex-col items-center text-center gap-2.5">
-              <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-3xl shrink-0">📐</div>
-              <div>
-                <p class="text-sm font-semibold leading-tight">Auto 9:16 Crop</p>
-                <p class="text-xs text-muted-foreground mt-1 leading-snug">Smart vertical framing for TikTok &amp; Reels</p>
-              </div>
+          </div>
+          <!-- Smart Crop -->
+          <div class="rounded-2xl border bg-card p-6 space-y-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center text-2xl">📐</div>
+            <div>
+              <h3 class="font-semibold text-base">Smart 9:16 Crop</h3>
+              <p class="text-sm text-muted-foreground mt-1.5 leading-relaxed">
+                Speaker tracking keeps your subject perfectly centered for every cut. Optimised for YouTube Shorts, TikTok &amp; Instagram Reels.
+              </p>
             </div>
-            <div class="flex flex-col items-center text-center gap-2.5">
-              <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-3xl shrink-0">📄</div>
-              <div>
-                <p class="text-sm font-semibold leading-tight">Full Transcription</p>
-                <p class="text-xs text-muted-foreground mt-1 leading-snug">All speech as text — download SRT, VTT or JSON</p>
-              </div>
+          </div>
+          <!-- Transcription -->
+          <div class="rounded-2xl border bg-card p-6 space-y-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-xl bg-orange-500/10 flex items-center justify-center text-2xl">📄</div>
+            <div>
+              <h3 class="font-semibold text-base">Full Transcription</h3>
+              <p class="text-sm text-muted-foreground mt-1.5 leading-relaxed">
+                Every word of your video as text. Export as SRT, VTT or JSON — perfect for blog posts, newsletters, or repurposing on social.
+              </p>
             </div>
-            <div class="flex flex-col items-center text-center gap-2.5">
-              <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-3xl shrink-0">🔁</div>
-              <div>
-                <p class="text-sm font-semibold leading-tight">Reusable File</p>
-                <p class="text-xs text-muted-foreground mt-1 leading-snug">Re-process or re-download any format, any time</p>
-              </div>
+          </div>
+          <!-- Reusable Files -->
+          <div class="rounded-2xl border bg-card p-6 space-y-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-xl bg-pink-500/10 flex items-center justify-center text-2xl">🔁</div>
+            <div>
+              <h3 class="font-semibold text-base">Reusable Uploads</h3>
+              <p class="text-sm text-muted-foreground mt-1.5 leading-relaxed">
+                Uploaded videos stay in your library permanently. Change subtitle styles, re-run the AI, or re-download any format at any time.
+              </p>
+            </div>
+          </div>
+          <!-- Fast Processing -->
+          <div class="rounded-2xl border bg-card p-6 space-y-4 hover:shadow-md transition-shadow">
+            <div class="w-12 h-12 rounded-xl bg-yellow-500/10 flex items-center justify-center text-2xl">⚡</div>
+            <div>
+              <h3 class="font-semibold text-base">Fast Processing</h3>
+              <p class="text-sm text-muted-foreground mt-1.5 leading-relaxed">
+                Queue-based parallel rendering powered by FFmpeg. Most videos are processed in under 2 minutes — no waiting around.
+              </p>
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Pricing -->
-    <section id="pricing" class="border-t bg-muted/50 py-24">
-      <div class="container mx-auto px-4">
-        <PricingCards />
+    <!-- Final CTA -->
+    <section class="border-t bg-muted/50 py-24">
+      <div class="container mx-auto px-4 text-center">
+        <div class="mx-auto max-w-2xl space-y-6">
+          <div class="text-5xl">🎬</div>
+          <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">
+            Ready to <span class="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">go viral</span>?
+          </h2>
+          <p class="text-lg text-muted-foreground">
+            Join creators who save hours of editing every week. Upload your first video free, no credit card needed.
+          </p>
+          <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <NuxtLink to="/register">
+              <Button size="lg" class="text-lg px-8 py-6">
+                🚀 Start for Free
+              </Button>
+            </NuxtLink>
+            <NuxtLink to="/pricing">
+              <Button size="lg" variant="outline" class="text-lg px-8 py-6">
+                View Pricing
+              </Button>
+            </NuxtLink>
+          </div>
+        </div>
       </div>
     </section>
 
     <!-- Footer -->
     <footer class="border-t py-12">
-      <div class="container mx-auto px-4 text-center text-sm text-muted-foreground">
-        <p>© {{ new Date().getFullYear() }} ClipMafia. All rights reserved.</p>
+      <div class="container mx-auto px-4">
+        <div class="flex flex-col items-center gap-6 sm:flex-row sm:justify-between">
+          <div class="flex items-center gap-2 font-bold text-xl">
+            <span class="text-2xl">🎬</span>
+            <span class="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">ClipMafia</span>
+          </div>
+          <nav class="flex items-center gap-6 text-sm text-muted-foreground">
+            <NuxtLink to="/#features" class="hover:text-foreground transition-colors">Features</NuxtLink>
+            <NuxtLink to="/pricing" class="hover:text-foreground transition-colors">Pricing</NuxtLink>
+            <NuxtLink to="/login" class="hover:text-foreground transition-colors">Sign in</NuxtLink>
+            <NuxtLink to="/register" class="hover:text-foreground transition-colors">Get started</NuxtLink>
+          </nav>
+          <p class="text-sm text-muted-foreground">© {{ new Date().getFullYear() }} ClipMafia. All rights reserved.</p>
+        </div>
       </div>
     </footer>
   </div>

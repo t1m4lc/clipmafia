@@ -481,17 +481,63 @@ export async function processVideoJob(
       userMessage = "Speech transcription failed. Please retry.";
     }
 
-    // Update job as failed, recording the step it failed at
-    await updateJobStatus(jobId, "failed", 0, {
-      error_message: userMessage,
-      failed_at_step: failedAtStep,
-      steps,
-    });
+    // Wrap the failure updates in their own try/catch so a DB hiccup here
+    // cannot prevent the job from at least being marked "failed".
+    try {
+      await updateJobStatus(jobId, "failed", 0, {
+        error_message: userMessage,
+        failed_at_step: failedAtStep,
+        steps,
+      });
+    } catch (dbErr) {
+      console.error(`[Job ${jobId}] Could not persist "failed" status:`, dbErr);
+    }
 
-    // Update video status
-    await supabase
-      .from("videos")
-      .update({ status: "failed" } as any)
-      .eq("id", videoId);
+    try {
+      await supabase
+        .from("videos")
+        .update({ status: "failed" } as any)
+        .eq("id", videoId);
+    } catch (dbErr) {
+      console.error(
+        `[Job ${jobId}] Could not update video to "failed":`,
+        dbErr,
+      );
+    }
   }
 }
+
+/**
+ * POST /api/process/run
+ *
+ * HTTP wrapper around processVideoJob — called internally by start.post.ts
+ * as a fire-and-forget request so processing runs in its own independent
+ * serverless invocation (works on Vercel Pro with maxDuration: 300).
+ *
+ * Protected by x-internal-secret header to prevent external abuse.
+ */
+export default defineEventHandler(async (event) => {
+  const config = useRuntimeConfig();
+
+  // Internal auth — only accept calls from our own server
+  const secret = getHeader(event, "x-internal-secret") ?? "";
+  if (config.internalSecret && secret !== config.internalSecret) {
+    throw createError({ statusCode: 403, message: "Forbidden" });
+  }
+
+  const body = await readBody(event);
+  const { jobId, videoId, userId, subtitleSettings } = body;
+
+  if (!jobId || !videoId || !userId) {
+    throw createError({
+      statusCode: 400,
+      message: "jobId, videoId and userId are required",
+    });
+  }
+
+  // Run the full pipeline — this is the long-running operation.
+  // Vercel Pro allows up to 300 s (configured in vercel.json maxDuration).
+  await processVideoJob(jobId, videoId, userId, subtitleSettings);
+
+  return { ok: true };
+});

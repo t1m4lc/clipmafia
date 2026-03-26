@@ -63,6 +63,7 @@ async function subscribe(plan: 'pro' | 'business') {
         heading-tag="h1"
         :current-plan="currentPlan"
         :loading="loading"
+        :hasFeatures="true"
         @subscribe="subscribe"
       />
     </div>

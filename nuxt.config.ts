@@ -28,6 +28,10 @@ export default defineNuxtConfig({
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
     // Bypass — skip all Stripe/quota checks
     bypassPayment: process.env.BYPASS_PAYMENT === "true",
+    // Admin dashboard secret (protects /api/admin/* routes)
+    adminSecret: process.env.ADMIN_SECRET || "",
+    // Internal secret shared between start.post.ts and run.post.ts
+    internalSecret: process.env.INTERNAL_SECRET || "",
 
     // Public keys (available client-side)
     public: {
@@ -139,6 +143,7 @@ export default defineNuxtConfig({
         },
       ],
       link: [
+        { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
         { rel: "icon", type: "image/x-icon", href: "/favicon.ico" },
         { rel: "apple-touch-icon", href: "/icons/icon-192x192.png" },
       ],

@@ -4,7 +4,12 @@
 export default defineEventHandler(async (event) => {
   // Skip auth for webhook endpoints and public routes
   const url = getRequestURL(event);
-  const publicPaths = ["/api/stripe/webhook", "/api/_"];
+  const publicPaths = [
+    "/api/stripe/webhook",
+    "/api/admin/",
+    "/api/process/run",
+    "/api/_",
+  ];
 
   if (publicPaths.some((p) => url.pathname.startsWith(p))) {
     return;

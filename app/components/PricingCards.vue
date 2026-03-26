@@ -1,4 +1,5 @@
 <script setup lang="ts">
+
 /**
  * Shared pricing grid used on both the landing page and the /pricing page.
  *
@@ -16,10 +17,12 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   /** Heading level — h1 on the standalone /pricing page, h2 everywhere else. */
   headingTag?: 'h1' | 'h2'
+  hasFeatures: boolean
 }>(), {
   currentPlan: null,
   loading: false,
   headingTag: 'h2',
+  hasFeatures: false
 })
 
 const emit = defineEmits<{
@@ -45,6 +48,9 @@ const isAuthenticated = computed(() => props.currentPlan !== null)
 const route = useRoute()
 const isEarlyBird = computed(() => route.query.code === 'earlybid')
 const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.price}`)
+
+/** Tally form URL for the Team plan — replace TEAM_FORM_ID with your actual Tally form slug */
+const TALLY_TEAM_FORM_URL = 'https://tally.so/r/ODLdkp'
 </script>
 
 <template>
@@ -106,6 +112,10 @@ const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.pr
             <span class="mt-0.5 text-amber-500 shrink-0">⚠</span>
             <span>Shorts include a watermark</span>
           </li>
+          <li class="flex items-start gap-2.5 text-muted-foreground">
+            <span class="mt-0.5 text-amber-500 shrink-0">⚠</span>
+            <span>Default subtitle style only</span>
+          </li>
         </ul>
       </CardContent>
       <CardFooter class="pt-2">
@@ -165,6 +175,14 @@ const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.pr
             <span class="text-green-500 shrink-0 font-bold">✓</span>
             <span>Priority processing queue</span>
           </li>
+          <li class="flex items-start gap-2.5">
+            <span class="text-green-500 shrink-0 font-bold mt-0.5">✓</span>
+            <span>
+              <span class="font-semibold">Custom subtitle styles</span>
+              <span class="ml-1.5 text-[10px] bg-primary/15 text-primary font-semibold px-1.5 py-0.5 rounded-full align-middle">🎨 New</span>
+              <br><span class="text-xs text-muted-foreground">Font, color, size, shadow &amp; position</span>
+            </span>
+          </li>
         </ul>
       </CardContent>
       <CardFooter class="pt-2">
@@ -185,11 +203,11 @@ const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.pr
       </CardFooter>
     </Card>
 
-    <!-- Business ─────────────────── -->
+    <!-- Team ─────────────────── -->
     <Card class="flex flex-col">
       <CardHeader class="pb-4">
-        <CardTitle class="text-xl">Business</CardTitle>
-        <CardDescription>For agencies &amp; high-volume teams</CardDescription>
+        <CardTitle class="text-xl">Team</CardTitle>
+        <CardDescription>For agencies &amp; high-volume creators</CardDescription>
       </CardHeader>
       <CardContent class="flex-1 space-y-5">
         <div class="text-4xl font-bold">
@@ -222,6 +240,17 @@ const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.pr
             <span class="text-green-500 shrink-0 font-bold">✓</span>
             <span>Priority processing queue</span>
           </li>
+          <li class="flex items-start gap-2.5">
+            <span class="text-green-500 shrink-0 font-bold mt-0.5">✓</span>
+            <span>
+              <span class="font-semibold">Custom subtitle styles 🎨</span>
+              <br><span class="text-xs text-muted-foreground">Font, color, size, shadow &amp; position</span>
+            </span>
+          </li>
+          <li class="flex items-center gap-2.5">
+            <span class="text-green-500 shrink-0 font-bold">✓</span>
+            <span>Dedicated onboarding &amp; support</span>
+          </li>
           <li class="flex items-center gap-2.5 text-muted-foreground">
             <span class="shrink-0">🔜</span>
             <span>Team seats (coming soon)</span>
@@ -229,35 +258,68 @@ const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.pr
         </ul>
       </CardContent>
       <CardFooter class="pt-2">
-        <template v-if="isAuthenticated">
-          <Button
-            variant="outline"
-            class="w-full"
-            :disabled="loading || currentPlan === 'business'"
-            @click="emit('subscribe', 'business')"
-          >
-            {{ currentPlan === 'business' ? 'Current Plan' : loading ? 'Loading…' : 'Subscribe' }}
-          </Button>
+        <template v-if="isAuthenticated && currentPlan === 'business'">
+          <Button variant="outline" class="w-full" disabled>Current Plan</Button>
         </template>
         <template v-else>
-          <NuxtLink to="/register" class="w-full">
-            <Button variant="outline" class="w-full">Contact Sales</Button>
-          </NuxtLink>
+          <a :href="TALLY_TEAM_FORM_URL" target="_blank" rel="noopener noreferrer" class="w-full">
+            <Button variant="outline" class="w-full">Contact Sales →</Button>
+          </a>
         </template>
       </CardFooter>
     </Card>
   </div>
 
-  <!-- ─── Tagline ──────────────────────────────────────────────────────── -->
-  <div class="text-center mt-14">
-    <p class="text-base font-medium text-primary">
-      ⚡ Upload once, generate dozens of ready-to-post shorts in one click — <b>save hours of editing every week</b>.
-    </p>
-  </div>
 
-  <!-- ─── Transparency note ────────────────────────────────────────────── -->
-  <div class="mt-10 max-w-2xl mx-auto text-center text-xs text-muted-foreground space-y-1.5">
-    <p>All plans include AI-powered segment detection and fully customisable subtitle styles.</p>
-    <p>Upload counters reset automatically on the 1st of each month.</p>
+
+  <!-- ─── Included in every plan ──────────────────────────────────────── -->
+  <div v-if="props.hasFeatures" class="mt-16 max-w-5xl mx-auto">
+    <p class="text-center text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-7">
+      ✦ Included in every plan ✦
+    </p>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div class="flex flex-col items-center text-center gap-2 rounded-xl bg-muted/40 border border-border/50 px-3 py-4 hover:bg-muted/60 transition-colors">
+        <span class="text-2xl">🧠</span>
+        <div>
+          <p class="text-xs font-semibold leading-tight">AI Viral Detection</p>
+          <p class="text-[10px] text-muted-foreground mt-0.5 leading-snug">Scores every moment for engagement</p>
+        </div>
+      </div>
+      <div class="flex flex-col items-center text-center gap-2 rounded-xl bg-muted/40 border border-border/50 px-3 py-4 hover:bg-muted/60 transition-colors">
+        <span class="text-2xl">📐</span>
+        <div>
+          <p class="text-xs font-semibold leading-tight">Smart 9:16 Crop</p>
+          <p class="text-[10px] text-muted-foreground mt-0.5 leading-snug">Auto vertical framing for Reels &amp; TikTok</p>
+        </div>
+      </div>
+      <div class="flex flex-col items-center text-center gap-2 rounded-xl bg-muted/40 border border-border/50 px-3 py-4 hover:bg-muted/60 transition-colors">
+        <span class="text-2xl">✍️</span>
+        <div>
+          <p class="text-xs font-semibold leading-tight">Auto Subtitles</p>
+          <p class="text-[10px] text-muted-foreground mt-0.5 leading-snug">Burned-in captions on every short</p>
+        </div>
+      </div>
+      <div class="flex flex-col items-center text-center gap-2 rounded-xl bg-muted/40 border border-border/50 px-3 py-4 hover:bg-muted/60 transition-colors">
+        <span class="text-2xl">📄</span>
+        <div>
+          <p class="text-xs font-semibold leading-tight">Full Transcription</p>
+          <p class="text-[10px] text-muted-foreground mt-0.5 leading-snug">SRT · VTT · JSON export</p>
+        </div>
+      </div>
+      <div class="flex flex-col items-center text-center gap-2 rounded-xl bg-muted/40 border border-border/50 px-3 py-4 hover:bg-muted/60 transition-colors">
+        <span class="text-2xl">🔁</span>
+        <div>
+          <p class="text-xs font-semibold leading-tight">Reusable Uploads</p>
+          <p class="text-[10px] text-muted-foreground mt-0.5 leading-snug">Re-process or re-download any time</p>
+        </div>
+      </div>
+      <div class="flex flex-col items-center text-center gap-2 rounded-xl bg-muted/40 border border-border/50 px-3 py-4 hover:bg-muted/60 transition-colors">
+        <span class="text-2xl">⚡</span>
+        <div>
+          <p class="text-xs font-semibold leading-tight">Fast Processing</p>
+          <p class="text-[10px] text-muted-foreground mt-0.5 leading-snug">Queue-based parallel rendering</p>
+        </div>
+      </div>
+    </div>
   </div>
 </template>

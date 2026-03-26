@@ -217,15 +217,39 @@ export function useVideos() {
   ];
 
   /**
-   * Poll job status until completion.
-   * Also refreshes the shorts list during the "Create Shorts" phase so the
-   * client can derive smooth per-segment progress.
+   * Poll job status until completion or timeout.
+   *
+   * Returns a `stop()` helper so the caller can cancel polling when the
+   * component unmounts, preventing memory / network leaks.
+   *
+   * Hard-stops after 20 minutes and automatically calls the rescue endpoint
+   * so the job is marked "failed" and the retry button becomes available.
    */
   function pollJobStatus(videoId: string, interval: number = 3000) {
     const polling = ref(true);
+    /** 20-minute absolute ceiling — protects against Vercel timeouts / crashes */
+    const POLL_TIMEOUT_MS = 20 * 60 * 1000;
+    const startedAt = Date.now();
 
     const poll = async () => {
       while (polling.value) {
+        // Hard timeout — rescue the job and stop
+        if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+          polling.value = false;
+          if (currentJob.value?.id) {
+            try {
+              await $fetch("/api/jobs/rescue", {
+                method: "POST",
+                body: { jobId: currentJob.value.id },
+              });
+              await fetchJob(videoId); // refresh so the UI shows "failed"
+            } catch {
+              /* ignore — rescue is best-effort */
+            }
+          }
+          break;
+        }
+
         const job = await fetchJob(videoId);
         if (job && (job.status === "completed" || job.status === "failed")) {
           polling.value = false;

@@ -84,13 +84,28 @@ export default defineEventHandler(async (event) => {
     .update({ status: "processing" })
     .eq("id", videoId);
 
-  // Add to processing queue
-  jobQueue.add({
-    jobId: job.id,
-    videoId,
-    userId: user.id,
-    subtitleSettings,
-  });
+  // Fire-and-forget: trigger the processing pipeline in a separate server
+  // invocation so it runs independently of this request's lifetime.
+  // On Vercel Pro, /api/process/run has maxDuration: 300 (vercel.json).
+  // We intentionally do NOT await so the client gets an instant response.
+  const config = useRuntimeConfig();
+  const appUrl = config.public.appUrl || "http://localhost:3000";
+
+  fetch(`${appUrl}/api/process/run`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-internal-secret": String(config.internalSecret ?? ""),
+    },
+    body: JSON.stringify({
+      jobId: job.id,
+      videoId,
+      userId: user.id,
+      subtitleSettings: subtitleSettings || null,
+    }),
+  }).catch((err) =>
+    console.error("[start] Failed to trigger /api/process/run:", err),
+  );
 
   return {
     success: true,

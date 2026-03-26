@@ -21,7 +21,7 @@ export interface PlanSettings {
 
 export const SUBSCRIPTION_CONFIG: Record<PlanName, PlanSettings> = {
   FREE: {
-    videoUploadsPerMonth: 1,
+    videoUploadsPerMonth: 3,
     maxDurationMinutes: 3,
     maxFileSizeMb: 50,
     price: 0,
@@ -29,7 +29,7 @@ export const SUBSCRIPTION_CONFIG: Record<PlanName, PlanSettings> = {
   PRO: {
     videoUploadsPerMonth: 10,
     maxDurationMinutes: 30,
-    maxFileSizeMb: 1024, // 1 GB
+    maxFileSizeMb: 500, // 500 MB — hard limit matching Vercel Pro /tmp capacity
     price: 15,
   },
   BUSINESS: {

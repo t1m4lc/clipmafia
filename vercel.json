@@ -1,0 +1,18 @@
+{
+  "functions": {
+    "server/api/process/run.post.ts": {
+      "maxDuration": 300
+    },
+    "server/api/stripe/webhook.post.ts": {
+      "maxDuration": 30
+    }
+  },
+  "headers": [
+    {
+      "source": "/admin",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    }
+  ]
+}

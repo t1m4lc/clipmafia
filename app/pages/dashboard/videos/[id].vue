@@ -129,6 +129,9 @@ async function preloadThumbnails() {
   )
 }
 
+// Holds the polling stop function so we can cancel when the component unmounts
+let stopPolling: (() => void) | null = null
+
 onMounted(async () => {
   await fetchVideo(videoId)
   await fetchJob(videoId)
@@ -141,15 +144,35 @@ onMounted(async () => {
     loadOriginalVideo()
   }
 
-  if (currentJob.value && !['completed', 'failed'].includes(currentJob.value.status)) {
-    generating.value = true
-    pollJobStatus(videoId)
+  if (currentJob.value && !['completed', 'failed'].includes(currentJob.value.status ?? '')) {
+    // Attempt to rescue stale jobs before starting to poll.
+    // The server checks the job age — if it's still fresh the call is a no-op.
+    // This handles: fire-and-forget HTTP failures, Vercel function timeouts,
+    // and any crash that left the job at an intermediate non-terminal status.
+    try {
+      const rescue = await $fetch('/api/jobs/rescue', {
+        method: 'POST',
+        body: { jobId: currentJob.value.id },
+      }) as any
+      if (rescue?.rescued) {
+        // Job is now "failed" — re-fetch so the retry button appears
+        await fetchJob(videoId)
+      }
+    } catch { /* rescue is best-effort; silently ignore */ }
+
+    // Only start polling if the job is still actively in-progress
+    if (currentJob.value && !['completed', 'failed'].includes(currentJob.value.status ?? '')) {
+      generating.value = true
+      const { stop } = pollJobStatus(videoId)
+      stopPolling = stop
+    }
   }
 
   document.addEventListener('click', closeMenus)
 })
 
 onUnmounted(() => {
+  stopPolling?.()  // cancel ongoing polling to avoid memory / network leaks
   document.removeEventListener('click', closeMenus)
 })
 
