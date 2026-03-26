@@ -431,25 +431,6 @@ export function useVideos() {
   }
 
   /**
-   * Download segments JSON from a job.
-   */
-  function downloadSegmentsJson(videoTitle?: string) {
-    const segments = currentJob.value?.segments;
-    if (!segments || !Array.isArray(segments) || segments.length === 0) return;
-
-    const json = JSON.stringify(segments, null, 2);
-    const blob = new Blob([json], { type: "application/json;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${videoTitle || currentVideo.value?.title || "segments"}_segments.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  /**
    * Get a signed URL for the original uploaded video.
    */
   async function getOriginalVideoUrl(videoId: string): Promise<string> {
@@ -490,6 +471,5 @@ export function useVideos() {
     downloadTranscriptSrt,
     downloadTranscriptVtt,
     downloadTranscriptJson,
-    downloadSegmentsJson,
   };
 }

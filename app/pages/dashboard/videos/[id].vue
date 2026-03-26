@@ -27,7 +27,6 @@ const {
   downloadTranscriptSrt,
   downloadTranscriptVtt,
   downloadTranscriptJson,
-  downloadSegmentsJson,
 } = useVideos()
 
 const { settings: subtitleSettings } = useSubtitleSettings()
@@ -129,9 +128,6 @@ async function preloadThumbnails() {
   )
 }
 
-// Holds the polling stop function so we can cancel when the component unmounts
-let stopPolling: (() => void) | null = null
-
 onMounted(async () => {
   await fetchVideo(videoId)
   await fetchJob(videoId)
@@ -144,35 +140,15 @@ onMounted(async () => {
     loadOriginalVideo()
   }
 
-  if (currentJob.value && !['completed', 'failed'].includes(currentJob.value.status ?? '')) {
-    // Attempt to rescue stale jobs before starting to poll.
-    // The server checks the job age — if it's still fresh the call is a no-op.
-    // This handles: fire-and-forget HTTP failures, Vercel function timeouts,
-    // and any crash that left the job at an intermediate non-terminal status.
-    try {
-      const rescue = await $fetch('/api/jobs/rescue', {
-        method: 'POST',
-        body: { jobId: currentJob.value.id },
-      }) as any
-      if (rescue?.rescued) {
-        // Job is now "failed" — re-fetch so the retry button appears
-        await fetchJob(videoId)
-      }
-    } catch { /* rescue is best-effort; silently ignore */ }
-
-    // Only start polling if the job is still actively in-progress
-    if (currentJob.value && !['completed', 'failed'].includes(currentJob.value.status ?? '')) {
-      generating.value = true
-      const { stop } = pollJobStatus(videoId)
-      stopPolling = stop
-    }
+  if (currentJob.value && !['completed', 'failed'].includes(currentJob.value.status)) {
+    generating.value = true
+    pollJobStatus(videoId)
   }
 
   document.addEventListener('click', closeMenus)
 })
 
 onUnmounted(() => {
-  stopPolling?.()  // cancel ongoing polling to avoid memory / network leaks
   document.removeEventListener('click', closeMenus)
 })
 
@@ -360,6 +336,19 @@ const jobProgress = computed(() => {
 })
 
 const jobSteps = computed(() => (currentJob.value as any)?.steps || null)
+
+/** True while shorts are actively being created (so we can show skeletons) */
+const isCreatingShorts = computed(() => {
+  const status = currentJob.value?.status ?? ''
+  return CREATING_STEPS.includes(status)
+})
+
+/** Number of skeleton placeholders to show for shorts not yet uploaded */
+const pendingSkeletonCount = computed(() => {
+  if (!isCreatingShorts.value) return 0
+  const total = segments.value.length || 3
+  return Math.max(0, total - shorts.value.length)
+})
 
 const hasSegments = computed(() => {
   return !!(currentJob.value?.segments && Array.isArray(currentJob.value.segments) && currentJob.value.segments.length > 0)
@@ -595,13 +584,22 @@ async function seekToSegment(segment: Segment) {
       </div>
 
       <!-- ═══════════════ GENERATED SHORTS ═══════════════ -->
-      <div v-if="shorts.length > 0" class="space-y-4">
+      <div v-if="shorts.length > 0 || isCreatingShorts" class="space-y-4">
         <!-- Header row -->
         <div class="flex flex-col gap-3">
           <div class="flex items-center flex-col sm:flex-row justify-between gap-2">
-            <h2 class="text-xl font-bold flex items-center gap-2">✨ Generated Shorts <span class="text-base font-normal text-muted-foreground">({{ shorts.length }})</span></h2>
+            <h2 class="text-xl font-bold flex items-center gap-2">
+              ✨ Generated Shorts
+              <span class="text-base font-normal text-muted-foreground">
+                ({{ shorts.length }}<template v-if="isCreatingShorts">/{{ segments.length || '?' }}</template>)
+              </span>
+              <span v-if="isCreatingShorts" class="inline-flex items-center gap-1 text-xs font-normal text-muted-foreground">
+                <svg class="size-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" /><path class="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg>
+                En cours…
+              </span>
+            </h2>
                     <!-- Batch Download -->
-        <Button variant="outline" class="w-full sm:w-auto gap-2" @click="handleBatchDownload" :disabled="batchDownloading">
+        <Button variant="outline" class="w-full sm:w-auto gap-2" @click="handleBatchDownload" :disabled="batchDownloading || isCreatingShorts">
           <Download class="size-4" />
           {{ batchDownloading ? 'Downloading...' : `Download All Shorts` }}
         </Button>
@@ -701,7 +699,7 @@ async function seekToSegment(segment: Segment) {
                       <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm hover:bg-accent cursor-pointer" @click="handlePlayShort(short.id, short.title); activeMenuShortId = null">
                         <Play class="size-4" /> Preview
                       </button>
-                      <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm hover:bg-accent cursor-pointer" @click="handleDownload(short.id, short.title); activeMenuShortId = null">
+                      <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm hover:bg-accent cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed" :disabled="isCreatingShorts" @click="!isCreatingShorts && (handleDownload(short.id, short.title), activeMenuShortId = null)">
                         <Download class="size-4" /> Download
                       </button>
                       <hr class="my-1 border-border" />
@@ -716,6 +714,17 @@ async function seekToSegment(segment: Segment) {
                     {{ formatDuration(short.duration) }} &middot; {{ short.width }}&times;{{ short.height }}
                   </p>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <!-- Skeleton cards for shorts not yet uploaded -->
+          <Card v-for="i in pendingSkeletonCount" :key="'skel-card-' + i" class="border-2 opacity-60 animate-pulse">
+            <CardContent class="p-0">
+              <Skeleton class="aspect-[9/16] rounded-t-lg w-full" />
+              <div class="p-3 space-y-2">
+                <Skeleton class="h-4 w-3/4" />
+                <Skeleton class="h-3 w-1/3" />
               </div>
             </CardContent>
           </Card>
@@ -759,7 +768,7 @@ async function seekToSegment(segment: Segment) {
                            <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm hover:bg-accent cursor-pointer" @click="handlePlayShort(short.id, short.title)">
                     <Play class="size-4" /> Preview
                   </button>
-                  <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm hover:bg-accent cursor-pointer" @click="handleDownload(short.id, short.title); activeMenuShortId = null">
+                  <button class="flex w-full items-center gap-2 rounded-sm px-3 py-2.5 text-sm hover:bg-accent cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed" :disabled="isCreatingShorts" @click="!isCreatingShorts && (handleDownload(short.id, short.title), activeMenuShortId = null)">
                     <Download class="size-4" /> Download
                   </button>
                   <hr class="my-1 border-border" />
@@ -770,14 +779,31 @@ async function seekToSegment(segment: Segment) {
               </div>
             </div>
           </div>
+
+          <!-- Skeleton rows for shorts not yet uploaded -->
+          <div
+            v-for="i in pendingSkeletonCount"
+            :key="'skel-row-' + i"
+            class="flex items-center gap-3 p-3 rounded-lg border opacity-60 animate-pulse"
+          >
+            <div class="flex flex-col items-center gap-1 w-14 shrink-0">
+              <Skeleton class="h-5 w-10" />
+              <Skeleton class="h-3 w-6" />
+            </div>
+            <div class="flex-1 space-y-2">
+              <Skeleton class="h-4 w-4/5" />
+              <Skeleton class="h-3 w-16" />
+            </div>
+            <Skeleton class="h-8 w-20 rounded-md shrink-0" />
+          </div>
         </div>
 
         <div class="text-center py-6">
-                                      <!-- Batch Download -->
-        <Button variant="secondary" class="w-full sm:w-auto gap-2" @click="handleBatchDownload" :disabled="batchDownloading">
-          <Download class="size-4" />
-          {{ batchDownloading ? 'Downloading...' : `Download All ${filteredShorts.length} Shorts` }}
-        </Button>
+          <!-- Batch Download -->
+          <Button variant="secondary" class="w-full sm:w-auto gap-2" @click="handleBatchDownload" :disabled="batchDownloading || isCreatingShorts">
+            <Download class="size-4" />
+            {{ batchDownloading ? 'Downloading...' : `Download All ${filteredShorts.length} Shorts` }}
+          </Button>
         </div>
 
       </div>
@@ -1011,7 +1037,6 @@ async function seekToSegment(segment: Segment) {
             <Button variant="outline" size="sm" class="justify-center" @click="downloadTranscriptSrt()">⬇️ .SRT</Button>
             <Button variant="outline" size="sm" class="justify-center" @click="downloadTranscriptVtt()">⬇️ .VTT</Button>
             <Button variant="outline" size="sm" class="justify-center" @click="downloadTranscriptJson()">📄 Transcript</Button>
-            <Button v-if="hasSegments" variant="outline" size="sm" class="justify-center" @click="downloadSegmentsJson()">🤖 Segments</Button>
           </div>
         </CardContent>
       </Card>

@@ -34,20 +34,48 @@ export async function transcribeAudio(
   });
   console.log("[transcribeAudio] Blob size:", audioBlob.size, "bytes");
 
-  const DEEPGRAM_URL =
-    "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true&words=true&detect_language=true";
+  /**
+   * Build the Deepgram URL based on the attempt number and previously detected language.
+   *
+   * Attempt 1 — nova-2 + detect_language (fast, accurate for English)
+   * Attempt 2 — nova-2 + explicit language (fixes non-English 0-word issue where
+   *             detect_language succeeds but the model returns no words)
+   * Attempt 3 — whisper-large + explicit language (fully multilingual fallback)
+   */
+  function buildDeepgramUrl(attempt: number, lang: string | null): string {
+    const base = "https://api.deepgram.com/v1/listen";
+    // When a language was detected use it explicitly; otherwise re-detect
+    const langParam = lang ? `language=${lang}` : `detect_language=true`;
+    if (attempt === 1) {
+      return `${base}?model=nova-2&smart_format=true&punctuate=true&words=true&detect_language=true`;
+    }
+    if (attempt === 2) {
+      // nova-2 with explicit/re-detected language — fixes the 0-word issue for non-English
+      return `${base}?model=nova-2&smart_format=true&punctuate=true&words=true&${langParam}`;
+    }
+    // Attempt 3+: whisper-large — fully multilingual, slower but handles every language
+    return `${base}?model=whisper-large&punctuate=true&words=true&${langParam}`;
+  }
 
-  // Retry up to 2 times on network-level failures (fetch failed / ECONNRESET).
-  const MAX_RETRIES = 2;
+  // 3 attempts:
+  //  1 → nova-2 + detect_language
+  //  2 → nova-2 + explicit detected language (main fix for French / other non-EN)
+  //  3 → whisper-large + explicit language (last resort)
+  const MAX_RETRIES = 3;
   const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes — enough for very large files
 
   let lastError: unknown;
+  let detectedLanguage: string | null = null;
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const url = buildDeepgramUrl(attempt, detectedLanguage);
+    console.log(`[transcribeAudio] Attempt ${attempt}/${MAX_RETRIES}: ${url}`);
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     try {
-      const response = await fetch(DEEPGRAM_URL, {
+      const response = await fetch(url, {
         method: "POST",
         headers: {
           Authorization: `Token ${config.deepgramApiKey}`,
@@ -70,12 +98,24 @@ export async function transcribeAudio(
 
       const data = await response.json();
 
+      // Capture detected language for use in subsequent retry attempts
+      const responseLang: string | undefined =
+        data.results?.channels?.[0]?.detected_language;
+      if (responseLang) detectedLanguage = responseLang;
+
       // Log the full Deepgram response metadata for debugging
       console.log("[transcribeAudio] Deepgram response metadata:", {
+        attempt,
+        model:
+          attempt === 1
+            ? "nova-2+detect"
+            : attempt === 2
+              ? "nova-2+explicit"
+              : "whisper-large",
         requestId: data.metadata?.request_id,
         duration: data.metadata?.duration,
         channels: data.metadata?.channels,
-        detectedLanguage: data.results?.channels?.[0]?.detected_language,
+        detectedLanguage: responseLang,
         transcriptSummary:
           data.results?.channels?.[0]?.alternatives?.[0]?.transcript?.slice(
             0,
@@ -120,10 +160,12 @@ export async function transcribeAudio(
       }
 
       if (words.length === 0) {
+        // Treat 0 words as a retryable condition — the next attempt will use
+        // a different model/language param combination.
         throw new Error(
-          `Deepgram returned 0 words. Check the logs above for the full response. ` +
-            `Duration detected: ${data.metadata?.duration ?? "unknown"}s. ` +
-            `Language detected: ${data.results?.channels?.[0]?.detected_language ?? "unknown"}.`,
+          `Deepgram returned 0 words (attempt ${attempt}). ` +
+            `Duration: ${data.metadata?.duration ?? "unknown"}s. ` +
+            `Language: ${responseLang ?? "unknown"}.`,
         );
       }
 
@@ -132,23 +174,24 @@ export async function transcribeAudio(
       clearTimeout(timer);
       lastError = err;
 
-      // Don't retry on Deepgram API errors (4xx/5xx) — only on network failures
-      const isNetworkError =
+      const isRetryable =
         err?.name === "AbortError" ||
         err?.cause?.code === "ECONNRESET" ||
         err?.cause?.code === "ENOTFOUND" ||
         err?.cause?.code === "UND_ERR_CONNECT_TIMEOUT" ||
-        err?.message?.toLowerCase().includes("fetch failed");
+        err?.message?.toLowerCase().includes("fetch failed") ||
+        err?.message?.includes("0 words");
 
-      if (!isNetworkError) throw err;
+      // Never retry on hard Deepgram API errors (4xx/5xx)
+      if (!isRetryable) throw err;
 
       console.warn(
-        `[transcribeAudio] Network error on attempt ${attempt}/${MAX_RETRIES}:`,
-        err?.cause?.code ?? err?.name ?? err?.message,
+        `[transcribeAudio] Retryable error on attempt ${attempt}/${MAX_RETRIES}:`,
+        err?.message,
       );
 
       if (attempt < MAX_RETRIES) {
-        const delay = attempt * 3000; // 3s, then 6s
+        const delay = attempt * 3000; // 3s → 6s → (no 4th attempt)
         console.log(`[transcribeAudio] Retrying in ${delay / 1000}s…`);
         await new Promise((r) => setTimeout(r, delay));
       }

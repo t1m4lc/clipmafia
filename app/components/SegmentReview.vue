@@ -35,19 +35,6 @@ function formatTime(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-function downloadSegmentsJson() {
-  const json = JSON.stringify(props.segments, null, 2)
-  const blob = new Blob([json], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${props.videoTitle || 'segments'}_segments.json`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-}
-
 const selectedSegments = computed(() =>
   props.segments.filter((_, i) => selectedIndexes.value.has(i)),
 )
@@ -73,9 +60,6 @@ watch(selectedSegments, (val) => {
       <div class="flex items-center gap-3">
         <Button variant="outline" size="sm" @click="selectAll">Select All</Button>
         <Button variant="outline" size="sm" @click="selectNone">Select None</Button>
-        <Button variant="outline" size="sm" @click="downloadSegmentsJson">
-          📄 Download JSON
-        </Button>
         <span class="text-xs text-muted-foreground ml-auto">
           {{ selectedIndexes.size }}/{{ segments.length }} selected
         </span>

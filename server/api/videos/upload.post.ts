@@ -73,9 +73,20 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // ── Create video record ───────────────────────────────────────────────────
+  // ── Ensure profile exists (guard against missing trigger on legacy accounts) ─
   const supabase = useSupabaseAdmin();
 
+  await supabase.from("profiles").upsert(
+    {
+      id: user.id,
+      email: user.email ?? "",
+      full_name: user.user_metadata?.full_name ?? null,
+      avatar_url: user.user_metadata?.avatar_url ?? null,
+    },
+    { onConflict: "id", ignoreDuplicates: true },
+  );
+
+  // ── Create video record ───────────────────────────────────────────────────
   const { data: video, error } = await supabase
     .from("videos")
     .insert({

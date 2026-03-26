@@ -177,14 +177,54 @@ export async function processVideoJob(
       );
       // Status was already set above before the pipeline started
     } else {
-      // Extract Audio
-      steps.extracting_audio = "loading";
-      await updateJobStatus(jobId, "extracting_audio", 10, { steps });
-
       const audioPath = join(tempDir, "audio.mp3");
-      await extractAudio(videoLocalPath, audioPath);
-      // NOTE: audio is no longer uploaded to Supabase storage;
-      // it is sent directly to Deepgram as a binary buffer below.
+      // Audio is keyed by videoId so it survives across job retries
+      const audioStoragePath = `${videoId}.mp3`;
+
+      // ── Try to reuse audio from a previous failed attempt ──────────────────
+      let audioCacheHit = false;
+      try {
+        const { data: cachedBlob, error: cacheErr } = await supabase.storage
+          .from("audio")
+          .download(audioStoragePath);
+        if (!cacheErr && cachedBlob) {
+          const cachedBytes = Buffer.from(await cachedBlob.arrayBuffer());
+          const { writeFile: wf } = await import("fs/promises");
+          await wf(audioPath, cachedBytes);
+          audioCacheHit = true;
+          console.log(
+            `[Job ${jobId}] Reusing cached audio from storage (${cachedBytes.length} bytes)`,
+          );
+        }
+      } catch {
+        // Cache miss or bucket unavailable — fall through to fresh extraction
+      }
+
+      if (!audioCacheHit) {
+        // Extract Audio
+        steps.extracting_audio = "loading";
+        await updateJobStatus(jobId, "extracting_audio", 10, { steps });
+
+        await extractAudio(videoLocalPath, audioPath);
+
+        // Upload to Supabase audio bucket for retry caching (best-effort)
+        try {
+          const audioBytes = await readFile(audioPath);
+          await supabase.storage
+            .from("audio")
+            .upload(audioStoragePath, audioBytes, {
+              contentType: "audio/mpeg",
+              upsert: true,
+            });
+          console.log(`[Job ${jobId}] Audio cached to storage for retries`);
+        } catch (cacheUploadErr) {
+          // Non-critical — transcription can still proceed from local temp file
+          console.warn(
+            `[Job ${jobId}] Audio cache upload skipped:`,
+            (cacheUploadErr as any)?.message,
+          );
+        }
+      }
 
       steps.extracting_audio = "done";
 
@@ -192,9 +232,6 @@ export async function processVideoJob(
       steps.transcribing = "loading";
       await updateJobStatus(jobId, "transcribing", 25, { steps });
 
-      // Read the local audio file and send bytes directly to Deepgram.
-      // This is more reliable than uploading to Supabase and passing a signed URL
-      // that Deepgram may not be able to reach from its servers.
       const audioBuffer = await readFile(audioPath);
       transcript = await transcribeAudio(audioBuffer);
 
@@ -432,6 +469,12 @@ export async function processVideoJob(
 
     await updateJobStatus(jobId, "completed", 100, { steps });
 
+    // Clean up cached audio from storage now that transcription is done
+    supabase.storage
+      .from("audio")
+      .remove([`${videoId}.mp3`])
+      .catch(() => {});
+
     // Clean up temp files
     const { rm } = await import("fs/promises");
     await rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -473,6 +516,7 @@ export async function processVideoJob(
       console.error(`[Job ${jobId}] Full FFmpeg error:`, rawMsg);
     } else if (rawMsg.includes("Deepgram") || rawMsg.includes("transcrib")) {
       userMessage = "Speech transcription failed. Please retry.";
+      console.error(`[Job ${jobId}] Deepgram error detail:`, rawMsg);
     }
 
     // Wrap the failure updates in their own try/catch so a DB hiccup here
