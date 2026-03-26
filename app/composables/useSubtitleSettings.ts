@@ -12,6 +12,17 @@ export const DEFAULT_SUBTITLE_SETTINGS: SubtitleSettings = {
   shadow: DEFAULT_SUBTITLE_STYLE.shadow,
   marginV: DEFAULT_SUBTITLE_STYLE.marginV,
   alignment: DEFAULT_SUBTITLE_STYLE.alignment,
+
+  // Kinetic caption defaults
+  subtitleMode: DEFAULT_SUBTITLE_STYLE.subtitleMode,
+  highlightColor: DEFAULT_SUBTITLE_STYLE.highlightColor,
+  highlightScale: DEFAULT_SUBTITLE_STYLE.highlightScale,
+  animationStyle: DEFAULT_SUBTITLE_STYLE.animationStyle,
+  upcomingWordVisibility: DEFAULT_SUBTITLE_STYLE.upcomingWordVisibility,
+  maxWordsPerLine: DEFAULT_SUBTITLE_STYLE.maxWordsPerLine,
+  maxLinesPerBlock: DEFAULT_SUBTITLE_STYLE.maxLinesPerBlock,
+  maxWordsOnScreen: DEFAULT_SUBTITLE_STYLE.maxWordsOnScreen,
+  backgroundStyle: DEFAULT_SUBTITLE_STYLE.backgroundStyle,
 };
 
 /**

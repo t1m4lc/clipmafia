@@ -91,6 +91,59 @@ Return valid JSON only. Object with key "segments" containing an array. Each seq
 
 Sort sequences by descending viral_score. Maximise number of sequences. For rich topics, 3–5 overlapping segments at different scales is expected.`;
 
+// ─── Deduplication ────────────────────────────────────────────────────────────
+
+/**
+ * Remove near-duplicate segments whose time windows overlap by more than 60%.
+ *
+ * When two segments overlap by > 60 % of the shorter one's duration the pair
+ * is considered a duplicate.  Because the input is sorted by viral_score
+ * descending we always keep the higher-scored segment.  When scores are
+ * identical the first (longer) segment wins, which maximises content.
+ */
+function deduplicateOverlappingSegments(
+  segments: OpenAISegment[],
+): OpenAISegment[] {
+  if (segments.length <= 1) return segments;
+
+  const kept: OpenAISegment[] = [];
+
+  for (const candidate of segments) {
+    const isDuplicate = kept.some((existing) => {
+      const overlapStart = Math.max(existing.start, candidate.start);
+      const overlapEnd = Math.min(existing.end, candidate.end);
+      const overlapDuration = Math.max(0, overlapEnd - overlapStart);
+
+      // Overlap ratio relative to the shorter segment's duration
+      const shorterDuration = Math.min(existing.duration, candidate.duration);
+      const overlapRatio =
+        shorterDuration > 0 ? overlapDuration / shorterDuration : 0;
+
+      if (overlapRatio > 0.6) {
+        console.log(
+          `[OpenAI] Dropping duplicate: "${candidate.title_suggestion}" ` +
+            `(${candidate.start}–${candidate.end}s, ${candidate.duration}s) ` +
+            `overlaps ${(overlapRatio * 100).toFixed(0)}% with ` +
+            `"${existing.title_suggestion}" (${existing.start}–${existing.end}s)`,
+        );
+        return true;
+      }
+      return false;
+    });
+
+    if (!isDuplicate) {
+      kept.push(candidate);
+    }
+  }
+
+  console.log(
+    `[OpenAI] Deduplication: ${segments.length} → ${kept.length} segments ` +
+      `(removed ${segments.length - kept.length} near-duplicates)`,
+  );
+
+  return kept;
+}
+
 // ─── Main: OpenAI segment detection ─────────────────────────────────────────
 
 /**
@@ -217,8 +270,11 @@ export async function detectSegmentsOpenAI(
     // Sort by viral_score descending (prompt already requests this, but enforce it)
     segments.sort((a, b) => b.viral_score - a.viral_score);
 
+    // Deduplicate near-identical segments (>60% overlap → keep the longer one)
+    segments = deduplicateOverlappingSegments(segments);
+
     console.log(
-      `[OpenAI] Detected ${segments.length} segments`,
+      `[OpenAI] Detected ${segments.length} segments (after dedup)`,
       segments.map(
         (s) =>
           `[${s.viral_score}/10] "${s.title_suggestion}" ${s.start}–${s.end}s (${s.duration}s, ${s.pattern})`,

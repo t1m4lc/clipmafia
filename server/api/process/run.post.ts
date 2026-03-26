@@ -353,6 +353,9 @@ export async function processVideoJob(
       const subtitleBlocks = groupWordsIntoSubtitles(adjustedWords);
       const srtContent = generateSRT(subtitleBlocks);
 
+      // Determine if kinetic mode — pass raw word-level timing for karaoke ASS
+      const isKinetic = subtitleSettings?.subtitleMode === "kinetic";
+
       // DEBUG: Log subtitle data before render
       console.log(`[Job ${jobId}] Segment ${i} subtitle info:`, {
         segmentRange: `${segment.start}s – ${segment.end}s`,
@@ -362,6 +365,7 @@ export async function processVideoJob(
         srtEmpty: !srtContent.trim(),
         styleApplied: subtitleSettings ? "custom" : "default",
         fontSize: subtitleSettings?.fontSize,
+        subtitleMode: subtitleSettings?.subtitleMode ?? "classic",
         addWatermark,
       });
 
@@ -377,7 +381,12 @@ export async function processVideoJob(
         srtContent,
         subtitledPath,
         subtitleSettings,
-        { addWatermark },
+        {
+          addWatermark,
+          // In kinetic mode, pass the individual word timestamps so the
+          // ASS generator can create per-word karaoke highlight events.
+          rawWords: isKinetic ? adjustedWords : undefined,
+        },
       );
 
       // =========================================

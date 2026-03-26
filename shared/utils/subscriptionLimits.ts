@@ -21,7 +21,7 @@ export interface PlanSettings {
 
 export const SUBSCRIPTION_CONFIG: Record<PlanName, PlanSettings> = {
   FREE: {
-    videoUploadsPerMonth: 3,
+    videoUploadsPerMonth: 2,
     maxDurationMinutes: 10,
     maxFileSizeMb: 50,
     price: 0,

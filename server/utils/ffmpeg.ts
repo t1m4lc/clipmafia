@@ -11,6 +11,9 @@ import {
   WATERMARK_CONFIG,
   getWatermarkAlignment,
   RENDER,
+  type SubtitleMode,
+  type KineticAnimation,
+  type UpcomingWordVisibility,
 } from "./overlayConfig";
 
 export interface SubtitleStyle {
@@ -23,6 +26,16 @@ export interface SubtitleStyle {
   shadow?: number;
   marginV?: number;
   alignment?: number; // 2 = bottom center
+
+  // Kinetic caption fields
+  subtitleMode?: SubtitleMode;
+  highlightColor?: string;
+  highlightScale?: number;
+  animationStyle?: KineticAnimation;
+  upcomingWordVisibility?: UpcomingWordVisibility;
+  maxWordsPerLine?: number;
+  maxLinesPerBlock?: number;
+  backgroundStyle?: "none" | "box";
 }
 
 /** Convert a hex color like "#RRGGBB" to ASS format "&H00BBGGRR" */
@@ -277,13 +290,16 @@ function srtToAss(
  * Generates a proper ASS file (not SRT) with explicit PlayResX/PlayResY
  * to guarantee correct font-size rendering regardless of libass defaults.
  * Optionally burns a watermark for free-tier users.
+ *
+ * When subtitleMode === "kinetic" and rawWords are provided, uses the
+ * kinetic ASS generator for word-by-word highlight instead of SRT→ASS.
  */
 export async function burnSubtitles(
   inputPath: string,
   srtContent: string,
   outputPath: string,
   style?: SubtitleStyle,
-  options?: { addWatermark?: boolean },
+  options?: { addWatermark?: boolean; rawWords?: TranscriptWord[] },
 ): Promise<string> {
   // DEBUG: Log render step entry
   console.log("[burnSubtitles] Entry:", {
@@ -293,6 +309,8 @@ export async function burnSubtitles(
     srtEmpty: !srtContent.trim(),
     styleProvided: !!style,
     fontSize: style?.fontSize,
+    subtitleMode: style?.subtitleMode,
+    rawWordsCount: options?.rawWords?.length,
     addWatermark: options?.addWatermark,
   });
 
@@ -340,15 +358,21 @@ export async function burnSubtitles(
 
   const baseFilename = `subs_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-  // Convert SRT → proper ASS file with PlayResX=1080, PlayResY=1920.
-  //
-  // WHY ASS AND NOT SRT+force_style:
-  //   libass defaults to PlayResY=288 for SRT files.  A force_style FontSize
-  //   of 33 therefore renders at  33 × (1920÷288) ≈ 220 px — the root cause
-  //   of subtitles being WAY too big regardless of any other scaling fix.
-  //   With a real ASS file and PlayResY=1920, FontSize=27 renders as exactly
-  //   27 px, perfectly matching the 12 px preview on an 844 px-tall phone screen.
-  const assContent = srtToAss(srtContent, s, RENDER.width, RENDER.height);
+  // ── Determine ASS content: kinetic vs classic ──
+  let assContent: string;
+
+  if (s.subtitleMode === "kinetic" && options?.rawWords?.length) {
+    // Kinetic mode: generate ASS with word-by-word karaoke highlight
+    const { generateKineticASS } = await import("./subtitles");
+    assContent = generateKineticASS(options.rawWords, s);
+    console.log("[burnSubtitles] Using KINETIC ASS mode", {
+      wordsCount: options.rawWords.length,
+      assLength: assContent.length,
+    });
+  } else {
+    // Classic mode: SRT → ASS conversion
+    assContent = srtToAss(srtContent, s, RENDER.width, RENDER.height);
+  }
   const assPath = join(dirname(inputPath), `${baseFilename}.ass`);
   await writeFile(assPath, assContent, "utf-8");
 

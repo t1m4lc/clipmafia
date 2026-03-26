@@ -2,6 +2,12 @@
 // These provide stronger typing for JSON columns stored in the database
 // and for union types used throughout the app.
 
+import type {
+  SubtitleMode,
+  KineticAnimation,
+  UpcomingWordVisibility,
+} from "../utils/overlayConfig";
+
 export interface TranscriptWord {
   start: number;
   end: number;
@@ -26,6 +32,18 @@ export interface SubtitleSettings {
   shadow: number;
   marginV: number;
   alignment: number;
+
+  // Kinetic caption fields
+  subtitleMode: SubtitleMode;
+  highlightColor: string;
+  fadeColor: string;
+  highlightScale: number;
+  animationStyle: KineticAnimation;
+  upcomingWordVisibility: UpcomingWordVisibility;
+  maxWordsPerLine: number;
+  maxLinesPerBlock: number;
+  maxWordsOnScreen: number;
+  backgroundStyle: "none" | "box";
 }
 
 export type VideoStatus = "uploaded" | "processing" | "completed" | "failed";
