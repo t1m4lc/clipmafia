@@ -77,23 +77,23 @@ export function useProfile() {
    * Any status that is not 'active' or 'trialing' falls back to 'free',
    * because no paid subscription is active.
    */
-  function effectivePlan(): "free" | "pro" | "business" {
+  function effectivePlan(): "free" | "starter" | "pro" {
     if (!profile.value) return "free";
     const isActive = ["active", "trialing"].includes(
       profile.value.subscription_status,
     );
     if (!isActive) return "free";
     const plan = profile.value.subscription_plan;
-    if (plan === "pro" || plan === "business") return plan;
+    if (plan === "starter" || plan === "pro") return plan;
     return "free";
   }
 
   /**
    * Get max upload file size in bytes for the current user's plan.
-   * - bypass   → Infinity (no limit)
-   * - free     → 100 MB  (5 min max)
-   * - pro      → 1 GB    (30 min max)
-   * - business → 3 GB    (60 min max)
+   * - bypass  → Infinity (no limit)
+   * - free    → 50 MB   (3 min max)
+   * - starter → 500 MB  (30 min max)
+   * - pro     → 3 GB    (60 min max)
    * Falls back to free limit when plan is inactive / unknown.
    */
   function getUploadLimit(): number {

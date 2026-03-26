@@ -17,7 +17,7 @@ CREATE TABLE public.profiles (
   stripe_customer_id TEXT UNIQUE,
   subscription_id TEXT,
   subscription_status TEXT DEFAULT 'inactive' CHECK (subscription_status IN ('active', 'inactive', 'canceled', 'past_due', 'trialing')),
-  subscription_plan TEXT DEFAULT 'free' CHECK (subscription_plan IN ('free', 'pro', 'business')),
+  subscription_plan TEXT DEFAULT 'free' CHECK (subscription_plan IN ('free', 'starter', 'pro')),
   monthly_video_limit INTEGER DEFAULT 3,
   videos_processed_this_month INTEGER DEFAULT 0,
   billing_cycle_start TIMESTAMPTZ,

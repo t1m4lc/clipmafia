@@ -23,7 +23,6 @@ export default defineNuxtConfig({
     stripeSecretKey: process.env.STRIPE_SECRET_KEY || "",
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
     deepgramApiKey: process.env.DEEPGRAM_API_KEY || "",
-    mistralApiKey: process.env.MISTRAL_API_KEY || "",
     openaiApiKey: process.env.OPENAI_API_KEY || "",
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
     // Bypass — skip all Stripe/quota checks
@@ -37,8 +36,8 @@ export default defineNuxtConfig({
     public: {
       appUrl: process.env.APP_URL || "http://localhost:3000",
       stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || "",
+      stripePriceIdStarter: process.env.STRIPE_PRICE_ID_STARTER || "",
       stripePriceIdPro: process.env.STRIPE_PRICE_ID_PRO || "",
-      stripePriceIdBusiness: process.env.STRIPE_PRICE_ID_BUSINESS || "",
       // Exposed to client so the UI can also bypass quota/plan checks
       bypassPayment: process.env.BYPASS_PAYMENT === "true",
       // Dev mode: show segment review panel & debug tools

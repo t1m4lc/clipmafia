@@ -41,7 +41,7 @@ export type JobStatus =
   | "completed"
   | "failed";
 
-export type SubscriptionPlan = "free" | "pro" | "business";
+export type SubscriptionPlan = "free" | "starter" | "pro";
 
 export type SubscriptionStatus =
   | "active"

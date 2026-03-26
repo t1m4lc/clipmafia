@@ -1,4 +1,3 @@
-
 /**
  * POST /api/stripe/checkout
  * Creates a Stripe Checkout session for subscription.
@@ -9,7 +8,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event);
   const { plan } = body;
 
-  if (!["pro", "business"].includes(plan)) {
+  if (!["starter", "pro"].includes(plan)) {
     throw createError({ statusCode: 400, message: "Invalid plan" });
   }
 
@@ -43,9 +42,9 @@ export default defineEventHandler(async (event) => {
 
   // Get price ID based on plan
   const priceId =
-    plan === "pro"
-      ? config.public.stripePriceIdPro
-      : config.public.stripePriceIdBusiness;
+    plan === "starter"
+      ? config.public.stripePriceIdStarter
+      : config.public.stripePriceIdPro;
 
   // Create checkout session
   const session = await stripe.checkout.sessions.create({

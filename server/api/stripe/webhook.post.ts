@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
     case "checkout.session.completed": {
       const session = stripeEvent.data.object as Stripe.Checkout.Session;
       const userId = session.metadata?.supabase_user_id;
-      const plan = session.metadata?.plan as "pro" | "business";
+      const plan = session.metadata?.plan as "starter" | "pro";
 
       if (userId && plan) {
         await supabase

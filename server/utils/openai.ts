@@ -1,9 +1,6 @@
 /**
  * OpenAI-based viral segment detection service.
  *
- * Runs in parallel with the existing Mistral service (server/utils/mistral.ts)
- * so that both approaches can be compared without affecting each other.
- *
  * Uses GPT-5.4-mini with a structured prompt for semantic topic analysis,
  * viral pattern matching, and platform-optimised timestamp extraction.
  */
@@ -53,8 +50,8 @@ STEP 2 — MULTI-SCALE VIRAL SEQUENCES
 For each topic, extract sequences at multiple scales:
   a) FULL (30–60 s) — entire topic or large portion telling a complete story.
   b) MID (15–30 s) — self-contained arc or strong moment within topic.
-  c) MICRO (10–15 s) — sharpest individual moments: hooks, punchlines, revelation lines, emotional peaks.
-Do not create sequences shorter than 10 seconds. Cover all scales that provide quality content.
+  c) MICRO (8–15 s) — sharpest individual moments: hooks, punchlines, revelation lines, emotional peaks.
+STRICTLY FORBIDDEN: never generate a sequence shorter than 8 seconds. Any sequence below 8 seconds must be discarded or extended. Cover all scales that provide quality content.
 
 STEP 3 — VIRAL PATTERNS
 Each sequence must match at least one of these patterns (priority order):
@@ -70,13 +67,13 @@ Each sequence must match at least one of these patterns (priority order):
 STEP 4 — PLATFORM DURATIONS
 TikTok & Instagram Reels: optimal 10–30 s, acceptable 30–60 s if highly engaging.  
 YouTube Shorts: optimal 15–40 s, acceptable 40–60 s if value dense.  
-Absolute max: 60 s. Minimum: 10 s. Prioritize optimal durations. Include longer clips only if content is strong.
+Absolute max: 60 s. ABSOLUTE MINIMUM: 8 s — any segment strictly below 8 seconds is FORBIDDEN and must be dropped. Prioritize optimal durations. Include longer clips only if content is strong.
 
 STEP 5 — SAFE TIMESTAMPS
 Adjust each sequence safely:
   start_adjusted = max(topic_start, word_start − 0.3)
   end_adjusted   = min(topic_end, word_end + 0.3)
-Do not exceed topic boundaries. Trim sequences >60 s by removing weakest parts. Extend sequences <10 s within same topic if possible.
+Do not exceed topic boundaries. Trim sequences >60 s by removing weakest parts. Extend sequences <8 s within the same topic to reach at least 8 s; if that is not possible, discard the sequence entirely — outputting a segment below 8 s is strictly prohibited.
 
 STEP 6 — OUTPUT FORMAT
 Return valid JSON only. Object with key "segments" containing an array. Each sequence must include:
@@ -190,10 +187,11 @@ export async function detectSegmentsOpenAI(
           typeof s.end === "number" &&
           s.start >= 0 &&
           s.end > s.start &&
+          s.end - s.start >= 8 && // strict 8s minimum
           s.end - s.start <= 65; // 60s hard limit + 5s tolerance for the 0.3s buffers
         if (!valid) {
           console.warn(
-            `[OpenAI] Dropping invalid segment: start=${s.start}, end=${s.end}`,
+            `[OpenAI] Dropping invalid segment: start=${s.start}, end=${s.end}, duration=${(s.end - s.start).toFixed(1)}s (min 8s required)`,
           );
         }
         return valid;
@@ -239,8 +237,6 @@ export async function detectSegmentsOpenAI(
 /**
  * Converts OpenAI enriched segments into the standard `Segment` type
  * used by the rest of the processing pipeline (FFmpeg, subtitle burn, DB).
- *
- * This allows swapping Mistral ↔ OpenAI in run.post.ts with a single line change.
  */
 export function openAISegmentsToStandard(
   openAISegments: OpenAISegment[],
@@ -249,6 +245,6 @@ export function openAISegmentsToStandard(
     start: s.start,
     end: s.end,
     title: s.title_suggestion,
-    score: s.viral_score / 10, // Normalize 1–10 → 0–1 to match Mistral's scale
+    score: s.viral_score / 10, // Normalize 1–10 → 0.1–1.0
   }));
 }

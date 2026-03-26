@@ -8,7 +8,7 @@
  * Both are checked client-side before upload; the server re-checks file size.
  */
 
-export type PlanName = "FREE" | "PRO" | "BUSINESS";
+export type PlanName = "FREE" | "STARTER" | "PRO";
 
 export interface PlanSettings {
   videoUploadsPerMonth: number;
@@ -26,21 +26,21 @@ export const SUBSCRIPTION_CONFIG: Record<PlanName, PlanSettings> = {
     maxFileSizeMb: 50,
     price: 0,
   },
-  PRO: {
+  STARTER: {
     videoUploadsPerMonth: 10,
     maxDurationMinutes: 30,
     maxFileSizeMb: 500, // 500 MB — hard limit matching Vercel Pro /tmp capacity
-    price: 15,
+    price: 9,
   },
-  BUSINESS: {
+  PRO: {
     videoUploadsPerMonth: 50,
     maxDurationMinutes: 60,
     maxFileSizeMb: 3072, // 3 GB
-    price: 75,
+    price: 39,
   },
 };
 
-export function getPlanLimits(dbPlan: string): PlanLimits {
+export function getPlanLimits(dbPlan: string): PlanSettings {
   const key = dbPlan.toUpperCase() as PlanName;
   return SUBSCRIPTION_CONFIG[key] ?? SUBSCRIPTION_CONFIG.FREE;
 }

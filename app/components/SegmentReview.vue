@@ -41,7 +41,7 @@ function downloadSegmentsJson() {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${props.videoTitle || 'segments'}_mistral_output.json`
+  a.download = `${props.videoTitle || 'segments'}_segments.json`
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
@@ -65,7 +65,7 @@ watch(selectedSegments, (val) => {
         <Badge variant="warning" class="text-xs">Dev Mode</Badge>
       </CardTitle>
       <CardDescription>
-        Review Mistral AI's detected segments. Select which ones to convert into shorts.
+        Review AI-detected segments. Select which ones to convert into shorts.
       </CardDescription>
     </CardHeader>
     <CardContent class="space-y-4">

@@ -223,7 +223,7 @@ export async function processVideoJob(
     }
 
     // =========================================
-    // Step 2: AI Segment Detection with Mistral
+    // Step 2: AI Segment Detection (OpenAI)
     // Skip if segments already exist from a previous job
     // =========================================
     if (segments && segments.length > 0) {
@@ -471,12 +471,6 @@ export async function processVideoJob(
           "Video processing failed. Please retry or try a different video.";
       }
       console.error(`[Job ${jobId}] Full FFmpeg error:`, rawMsg);
-    } else if (
-      rawMsg.includes("Mistral AI error") ||
-      rawMsg.includes("Failed to parse Mistral")
-    ) {
-      userMessage = "AI segment detection failed. Please retry.";
-      console.error(`[Job ${jobId}] Mistral error:`, rawMsg);
     } else if (rawMsg.includes("Deepgram") || rawMsg.includes("transcrib")) {
       userMessage = "Speech transcription failed. Please retry.";
     }

@@ -26,15 +26,14 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  subscribe: [plan: 'pro' | 'business']
+  subscribe: [plan: 'starter' | 'pro']
 }>()
 
 const limits = {
   free: SUBSCRIPTION_CONFIG.FREE,
+  starter: SUBSCRIPTION_CONFIG.STARTER,
   pro: SUBSCRIPTION_CONFIG.PRO,
-  business: SUBSCRIPTION_CONFIG.BUSINESS,
 }
-
 
 function formatSize(mb: number): string {
   if (mb < 1024) return `${mb} MB`
@@ -43,14 +42,6 @@ function formatSize(mb: number): string {
 
 /** True when we are in a context where the user is authenticated. */
 const isAuthenticated = computed(() => props.currentPlan !== null)
-
-/** Early-bird discount: show €9 instead of the config price when ?code=earlybid is in the URL. */
-const route = useRoute()
-const isEarlyBird = computed(() => route.query.code === 'earlybid')
-const proPrice = computed(() => isEarlyBird.value ? '€9' : `€${limits.pro.price}`)
-
-/** Tally form URL for the Team plan — replace TEAM_FORM_ID with your actual Tally form slug */
-const TALLY_TEAM_FORM_URL = 'https://tally.so/r/ODLdkp'
 </script>
 
 <template>
@@ -66,14 +57,6 @@ const TALLY_TEAM_FORM_URL = 'https://tally.so/r/ODLdkp'
     <p class="mt-4 text-lg text-muted-foreground max-w-xl mx-auto">
       Upload once. Let AI find the best moments and generate ready-to-post vertical shorts — automatically.
     </p>
-
-    <!-- Early-bird banner -->
-    <div
-      v-if="isEarlyBird"
-      class="mt-5 inline-flex items-center gap-2 rounded-full bg-primary/10 border border-primary/30 px-4 py-1.5 text-sm font-medium text-primary"
-    >
-      🎉 Early-bird deal applied — <b>€9/mo</b> instead of €15
-    </div>
   </div>
 
   <!-- ─── Pricing cards ────────────────────────────────────────────────── -->
@@ -132,36 +115,33 @@ const TALLY_TEAM_FORM_URL = 'https://tally.so/r/ODLdkp'
       </CardFooter>
     </Card>
 
-    <!-- Pro ─────────────────────── -->
+    <!-- Starter ─────────────────── -->
     <Card class="border-primary shadow-xl relative flex flex-col">
       <div class="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10">
         <Badge class="px-3 py-1 text-xs">⭐ Most Popular</Badge>
       </div>
       <CardHeader class="pb-4">
-        <CardTitle class="text-xl">Pro</CardTitle>
+        <CardTitle class="text-xl">Starter</CardTitle>
         <CardDescription>For solo creators who ship every week</CardDescription>
       </CardHeader>
       <CardContent class="flex-1 space-y-5">
-        <div class="flex items-end gap-2">
-          <div class="text-4xl font-bold">
-            {{ proPrice }}<span class="text-lg font-normal text-muted-foreground">/mo</span>
-          </div>
-          <div v-if="isEarlyBird" class="mb-1 text-sm text-muted-foreground line-through">€{{ limits.pro.price }}</div>
+        <div class="text-4xl font-bold">
+          €{{ limits.starter.price }}<span class="text-lg font-normal text-muted-foreground">/mo</span>
         </div>
 
         <!-- Limits table -->
         <div class="rounded-xl bg-primary/5 border border-primary/20 divide-y divide-primary/10 text-sm overflow-hidden">
           <div class="flex items-center justify-between px-4 py-2.5">
             <span class="text-muted-foreground">Uploads / month</span>
-            <span class="font-semibold">{{ limits.pro.videoUploadsPerMonth }}</span>
+            <span class="font-semibold">{{ limits.starter.videoUploadsPerMonth }}</span>
           </div>
           <div class="flex items-center justify-between px-4 py-2.5">
             <span class="text-muted-foreground">Max video length</span>
-            <span class="font-semibold">{{ limits.pro.maxDurationMinutes }} min</span>
+            <span class="font-semibold">{{ limits.starter.maxDurationMinutes }} min</span>
           </div>
           <div class="flex items-center justify-between px-4 py-2.5">
             <span class="text-muted-foreground">Max file size</span>
-            <span class="font-semibold">{{ formatSize(limits.pro.maxFileSizeMb) }}</span>
+            <span class="font-semibold">{{ formatSize(limits.starter.maxFileSizeMb) }}</span>
           </div>
         </div>
 
@@ -189,10 +169,10 @@ const TALLY_TEAM_FORM_URL = 'https://tally.so/r/ODLdkp'
         <template v-if="isAuthenticated">
           <Button
             class="w-full"
-            :disabled="loading || currentPlan === 'pro'"
-            @click="emit('subscribe', 'pro')"
+            :disabled="loading || currentPlan === 'starter'"
+            @click="emit('subscribe', 'starter')"
           >
-            {{ currentPlan === 'pro' ? 'Current Plan' : loading ? 'Loading…' : 'Subscribe' }}
+            {{ currentPlan === 'starter' ? 'Current Plan' : loading ? 'Loading…' : 'Subscribe' }}
           </Button>
         </template>
         <template v-else>
@@ -203,30 +183,30 @@ const TALLY_TEAM_FORM_URL = 'https://tally.so/r/ODLdkp'
       </CardFooter>
     </Card>
 
-    <!-- Team ─────────────────── -->
+    <!-- Pro ─────────────────── -->
     <Card class="flex flex-col">
       <CardHeader class="pb-4">
-        <CardTitle class="text-xl">Team</CardTitle>
+        <CardTitle class="text-xl">Pro</CardTitle>
         <CardDescription>For agencies &amp; high-volume creators</CardDescription>
       </CardHeader>
       <CardContent class="flex-1 space-y-5">
         <div class="text-4xl font-bold">
-          €{{ limits.business.price }}<span class="text-lg font-normal text-muted-foreground">/mo</span>
+          €{{ limits.pro.price }}<span class="text-lg font-normal text-muted-foreground">/mo</span>
         </div>
 
         <!-- Limits table -->
         <div class="rounded-xl bg-muted/50 divide-y divide-border text-sm overflow-hidden">
           <div class="flex items-center justify-between px-4 py-2.5">
             <span class="text-muted-foreground">Uploads / month</span>
-            <span class="font-semibold">{{ limits.business.videoUploadsPerMonth }}</span>
+            <span class="font-semibold">{{ limits.pro.videoUploadsPerMonth }}</span>
           </div>
           <div class="flex items-center justify-between px-4 py-2.5">
             <span class="text-muted-foreground">Max video length</span>
-            <span class="font-semibold">{{ limits.business.maxDurationMinutes }} min</span>
+            <span class="font-semibold">{{ limits.pro.maxDurationMinutes }} min</span>
           </div>
           <div class="flex items-center justify-between px-4 py-2.5">
             <span class="text-muted-foreground">Max file size</span>
-            <span class="font-semibold">{{ formatSize(limits.business.maxFileSizeMb) }}</span>
+            <span class="font-semibold">{{ formatSize(limits.pro.maxFileSizeMb) }}</span>
           </div>
         </div>
 
@@ -258,13 +238,20 @@ const TALLY_TEAM_FORM_URL = 'https://tally.so/r/ODLdkp'
         </ul>
       </CardContent>
       <CardFooter class="pt-2">
-        <template v-if="isAuthenticated && currentPlan === 'business'">
-          <Button variant="outline" class="w-full" disabled>Current Plan</Button>
+        <template v-if="isAuthenticated">
+          <Button
+            variant="outline"
+            class="w-full"
+            :disabled="loading || currentPlan === 'pro'"
+            @click="emit('subscribe', 'pro')"
+          >
+            {{ currentPlan === 'pro' ? 'Current Plan' : loading ? 'Loading…' : 'Subscribe' }}
+          </Button>
         </template>
         <template v-else>
-          <a :href="TALLY_TEAM_FORM_URL" target="_blank" rel="noopener noreferrer" class="w-full">
-            <Button variant="outline" class="w-full">Contact Sales →</Button>
-          </a>
+          <NuxtLink to="/register" class="w-full">
+            <Button variant="outline" class="w-full">Get Started</Button>
+          </NuxtLink>
         </template>
       </CardFooter>
     </Card>

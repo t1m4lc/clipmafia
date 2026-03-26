@@ -15,7 +15,7 @@ onMounted(() => {
 
 const currentPlan = computed(() => effectivePlan())
 
-async function subscribe(plan: 'pro' | 'business') {
+async function subscribe(plan: 'starter' | 'pro') {
   if (!user.value) {
     await navigateTo('/register')
     return

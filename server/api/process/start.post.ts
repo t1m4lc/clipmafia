@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Create job record — if a previous job failed, carry over its transcript/segments
-  // so we don't redo expensive API calls (Deepgram, Mistral)
+  // so we don't redo expensive API calls (Deepgram, OpenAI)
   let carryOverData: Record<string, any> = {};
 
   const { data: previousJob } = await supabase
